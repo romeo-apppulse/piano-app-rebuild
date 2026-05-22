@@ -17,33 +17,38 @@ struct StandardMonsterView: View {
     @State private var selectedStudent: String = ""
     
     func attack(attackDmg: Int) {
-        let i = battleDeck.battles.firstIndex(where: { $0.id == selectedBattle!.id })!
-
-        var battle = selectedBattle!
+        guard let initialBattle = selectedBattle else { return }
+        var battle = initialBattle
         var damage = attackDmg
-        
+
         func nextMonster() {
             let team = battle.team
             let monster = battle.monster
             battleDeck.remBattle(team: team)
-            
+
             let nextMonster = monsterDeck.nextMonster(monster: monster)
             let newBattle = Battle(monster: nextMonster, team: team)
             battleDeck.addBattle(battle: newBattle)
-            
+
             selectedBattle = battleDeck.battles.last
             battle = battleDeck.battles.last!
-            
+
             studentDeck.resetScores(teamName: battle.team.name)
         }
-        
+
             if battle.leftoverDmg(damage: damage) >= 0 {
                 damage = battle.leftoverDmg(damage: damage)
                 nextMonster()
         }
-        
-        battleDeck.battles[i].addDmg(dmg: damage)
-        studentDeck.students[studentDeck.indexOf(name: selectedStudent)!].updateScore(num: damage)
+
+        // Re-resolve by id AFTER nextMonster() so we hit the correct (possibly newly spawned) battle.
+        if let targetId = selectedBattle?.id,
+           let idx = battleDeck.battles.firstIndex(where: { $0.id == targetId }) {
+            battleDeck.battles[idx].addDmg(dmg: damage)
+        }
+        if let studentIdx = studentDeck.indexOf(name: selectedStudent) {
+            studentDeck.students[studentIdx].updateScore(num: damage)
+        }
         battleDeck.archive()
         studentDeck.archive()
     }

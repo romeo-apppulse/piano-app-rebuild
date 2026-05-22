@@ -33,8 +33,10 @@ class Team: ObservableObject, Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         name = try container.decode(String.self, forKey: .name)
-        minHP = try container.decodeIfPresent(Int.self, forKey: .minHP) ?? 150
-        maxHP = try container.decodeIfPresent(Int.self, forKey: .maxHP) ?? 250
+        // No silent fallback: missing/corrupt HP must surface as a decode error,
+        // not masquerade as a real 150/250 range.
+        minHP = try container.decode(Int.self, forKey: .minHP)
+        maxHP = try container.decode(Int.self, forKey: .maxHP)
     }
 
     func encode(to encoder: Encoder) throws {

@@ -117,7 +117,7 @@ class MiniBoss: Monster {
             let jsonData = try encoder.encode(self)
             
             // Step 5: Write the JSON data to the file in the Documents directory
-            try jsonData.write(to: jsonFilePath)
+            try jsonData.write(to: jsonFilePath, options: .atomic)
             print("JSON data was written to the file successfully at: \(jsonFilePath)")
             
         } catch {

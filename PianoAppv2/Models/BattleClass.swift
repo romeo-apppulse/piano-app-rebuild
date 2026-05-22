@@ -49,6 +49,8 @@ class Battle: ObservableObject {
     }
     
     func dmgPercent() -> Double {
+        // Guard against hp <= 0; otherwise the divide produces NaN/inf and crashes SwiftUI layout.
+        guard self.hp > 0 else { return 0 }
         return Double(self.dmg) / Double(self.hp)
     }
     

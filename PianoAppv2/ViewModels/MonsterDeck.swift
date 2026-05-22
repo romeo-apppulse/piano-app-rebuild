@@ -63,7 +63,7 @@ class MonsterDeck: ObservableObject {
             let jsonData = try encoder.encode(self.monsters)
             
             // Step 5: Write the JSON data to the file in the Documents directory
-            try jsonData.write(to: jsonFilePath)
+            try jsonData.write(to: jsonFilePath, options: .atomic)
             print("JSON data was written to the file successfully at: \(jsonFilePath)")
             
         } catch {
@@ -72,8 +72,11 @@ class MonsterDeck: ObservableObject {
     }
     
     func nextMonster(monster: StandardMonster) -> StandardMonster {
-        let monsterIndex = monsters.firstIndex(of: monster)!
-        if monsterIndex+1 != monsters.count {
+        // Fall back to the current monster if the deck is empty or the
+        // current monster was deleted mid-battle — prevents force-unwrap crash.
+        guard !monsters.isEmpty else { return monster }
+        guard let monsterIndex = monsters.firstIndex(of: monster) else { return monsters[0] }
+        if monsterIndex + 1 != monsters.count {
             return monsters[monsterIndex + 1]
         } else {
             return monsters[0]
