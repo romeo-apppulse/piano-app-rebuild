@@ -22,8 +22,12 @@ struct PianoAppv2Tests {
     static func cleanDocuments() {
         let fm = FileManager.default
         let dir = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
-        for name in ["monsterDeck.json", "teamDeck.json", "battleDeck.json", "students.json", "MiniBoss.json"] {
-            try? fm.removeItem(at: dir.appendingPathComponent(name))
+        let bases = ["monsterDeck.json", "teamDeck.json", "battleDeck.json", "students.json", "MiniBoss.json"]
+        for name in bases {
+            let base = dir.appendingPathComponent(name)
+            try? fm.removeItem(at: base)
+            try? fm.removeItem(at: base.appendingPathExtension("bak1"))
+            try? fm.removeItem(at: base.appendingPathExtension("bak2"))
         }
     }
 
@@ -481,5 +485,281 @@ struct PianoAppv2Tests {
         #expect(reloadedBattles.battles[0].hp == 200)
         #expect(reloadedBattles.battles[0].monster.name == "Echo")
         #expect(reloadedBattles.battles[0].team.name == "Mon")
+    }
+
+    // ========================================================================
+    // MARK: - Recover-and-flag for corrupt Team data
+    // ========================================================================
+
+    private func writeRawTeamJSON(_ json: String) {
+        let url = DataStore.documentsURL().appendingPathComponent("teamDeck.json")
+        try? json.data(using: .utf8)!.write(to: url, options: .atomic)
+    }
+
+    @Test("Team with missing minHP is RECOVERED (not dropped) and surfaced via recoveredTeamNames")
+    func teamDeck_corruptHP_recoversWithPlaceholderAndFlags() throws {
+        writeRawTeamJSON(#"""
+        [
+          { "id": "11111111-1111-1111-1111-111111111111", "name": "GoodTeam", "minHP": 50, "maxHP": 75 },
+          { "id": "22222222-2222-2222-2222-222222222222", "name": "BrokenTeam", "maxHP": 250 }
+        ]
+        """#)
+
+        let deck = TeamDeck()
+
+        #expect(deck.teams.count == 2, "BrokenTeam must NOT have been dropped")
+        let good = try #require(deck.teams.first { $0.name == "GoodTeam" })
+        let broken = try #require(deck.teams.first { $0.name == "BrokenTeam" })
+
+        #expect(good.minHP == 50)
+        #expect(good.maxHP == 75)
+        #expect(broken.minHP == 1, "Placeholder, NOT the old silent 150 default")
+        #expect(broken.maxHP == 1, "Placeholder, NOT the old silent 250 default")
+
+        #expect(deck.recoveredTeamNames == ["BrokenTeam"])
+    }
+
+    @Test("Team with valid HP loads cleanly and is NOT placed in recoveredTeamNames")
+    func teamDeck_validData_noRecoveryFlag() throws {
+        writeRawTeamJSON(#"""
+        [
+          { "id": "33333333-3333-3333-3333-333333333333", "name": "Mon", "minHP": 100, "maxHP": 200 }
+        ]
+        """#)
+
+        let deck = TeamDeck()
+        #expect(deck.teams.count == 1)
+        #expect(deck.teams[0].minHP == 100)
+        #expect(deck.teams[0].maxHP == 200)
+        #expect(deck.recoveredTeamNames.isEmpty)
+    }
+
+    @Test("Team with inverted HP range (minHP > maxHP) is treated as corrupt and recovered")
+    func teamDeck_invertedHP_recovered() throws {
+        writeRawTeamJSON(#"""
+        [
+          { "name": "Inverted", "minHP": 500, "maxHP": 100 }
+        ]
+        """#)
+
+        let deck = TeamDeck()
+        let team = try #require(deck.teams.first)
+        #expect(team.minHP == 1)
+        #expect(team.maxHP == 1)
+        #expect(deck.recoveredTeamNames == ["Inverted"])
+    }
+
+    @Test("Team with no name at all is skipped (can't identify it for the user)")
+    func teamDeck_missingName_isSkipped() throws {
+        writeRawTeamJSON(#"""
+        [
+          { "minHP": 100, "maxHP": 200 },
+          { "name": "OnlyValid", "minHP": 50, "maxHP": 75 }
+        ]
+        """#)
+
+        let deck = TeamDeck()
+        #expect(deck.teams.count == 1)
+        #expect(deck.teams[0].name == "OnlyValid")
+        #expect(deck.recoveredTeamNames.isEmpty)
+    }
+
+    // ========================================================================
+    // MARK: - Rolling backup rotation
+    // ========================================================================
+
+    @Test("First archive() creates .bak1 if a current file already existed")
+    func archive_rotatesCurrentToBak1() throws {
+        let deck = TeamDeck()
+        deck.teams = [Team(name: "First", minHP: 1, maxHP: 1)]
+        deck.archive()  // creates teamDeck.json (no current → no .bak1 yet)
+
+        let url = DataStore.documentsURL().appendingPathComponent("teamDeck.json")
+        let bak1 = url.appendingPathExtension("bak1")
+        #expect(!FileManager.default.fileExists(atPath: bak1.path),
+                "No backup expected yet; nothing was here to back up")
+
+        deck.teams = [Team(name: "Second", minHP: 2, maxHP: 2)]
+        deck.archive()  // current → .bak1
+
+        #expect(FileManager.default.fileExists(atPath: bak1.path), ".bak1 must exist after second write")
+        let bak1Data = try Data(contentsOf: bak1)
+        let bak1String = String(data: bak1Data, encoding: .utf8) ?? ""
+        #expect(bak1String.contains("First"), ".bak1 should contain the previous (First) write")
+        #expect(!bak1String.contains("Second"), ".bak1 should NOT contain the latest write")
+    }
+
+    @Test("Second archive() rotates .bak1 to .bak2 and writes new .bak1")
+    func archive_rotatesBak1ToBak2() throws {
+        let deck = TeamDeck()
+
+        deck.teams = [Team(name: "Gen1", minHP: 1, maxHP: 1)]
+        deck.archive()
+        deck.teams = [Team(name: "Gen2", minHP: 2, maxHP: 2)]
+        deck.archive()  // Gen1 → .bak1
+        deck.teams = [Team(name: "Gen3", minHP: 3, maxHP: 3)]
+        deck.archive()  // .bak1 → .bak2, Gen2 → .bak1
+
+        let url = DataStore.documentsURL().appendingPathComponent("teamDeck.json")
+        let bak1 = url.appendingPathExtension("bak1")
+        let bak2 = url.appendingPathExtension("bak2")
+
+        let bak1Str = String(data: try Data(contentsOf: bak1), encoding: .utf8) ?? ""
+        let bak2Str = String(data: try Data(contentsOf: bak2), encoding: .utf8) ?? ""
+        let currentStr = String(data: try Data(contentsOf: url), encoding: .utf8) ?? ""
+
+        #expect(currentStr.contains("Gen3"))
+        #expect(bak1Str.contains("Gen2"))
+        #expect(bak2Str.contains("Gen1"))
+    }
+
+    @Test("Oldest backup is dropped after three writes — only .bak1 and .bak2 are kept")
+    func archive_keepsAtMostTwoBackups() throws {
+        let deck = TeamDeck()
+        for gen in 1...4 {
+            deck.teams = [Team(name: "Gen\(gen)", minHP: gen, maxHP: gen)]
+            deck.archive()
+        }
+
+        let url = DataStore.documentsURL().appendingPathComponent("teamDeck.json")
+        let bak1 = url.appendingPathExtension("bak1")
+        let bak2 = url.appendingPathExtension("bak2")
+        let bak3 = url.appendingPathExtension("bak3")
+
+        #expect(FileManager.default.fileExists(atPath: bak1.path))
+        #expect(FileManager.default.fileExists(atPath: bak2.path))
+        #expect(!FileManager.default.fileExists(atPath: bak3.path), "No third backup should exist")
+
+        let bak1Str = String(data: try Data(contentsOf: bak1), encoding: .utf8) ?? ""
+        let bak2Str = String(data: try Data(contentsOf: bak2), encoding: .utf8) ?? ""
+        #expect(bak1Str.contains("Gen3"))
+        #expect(bak2Str.contains("Gen2"))
+    }
+
+    // ========================================================================
+    // MARK: - Export / Restore round-trip
+    // ========================================================================
+
+    @Test("Export then restore round-trips all four decks")
+    func backupManager_exportThenRestore_roundTrips() throws {
+        // 1. Populate live state and persist.
+        let monsterDeck = MonsterDeck()
+        monsterDeck.monsters = [StandardMonster(name: "Echo", img: "e.png", artist: "E")]
+        monsterDeck.archive()
+
+        let teamDeck = TeamDeck()
+        teamDeck.teams = [Team(name: "Mon", minHP: 200, maxHP: 300)]
+        teamDeck.archive()
+
+        let studentDeck = StudentDeck()
+        let s = Student(name: "Alice", teamName: "Mon"); s.score = 17
+        studentDeck.students = [s]
+        studentDeck.archive()
+
+        let battleDeck = BattleDeck(monsterDeck: monsterDeck, teamDeck: teamDeck)
+        let b = Battle(monster: monsterDeck.monsters[0], team: teamDeck.teams[0])
+        b.dmg = 11; b.hp = 250
+        battleDeck.battles = [b]
+        battleDeck.archive()
+
+        // 2. Build the export blob and wipe live files.
+        let exportData = try BackupManager.makeExportData()
+        Self.cleanDocuments()
+
+        // Confirm files are actually gone.
+        let docs = DataStore.documentsURL()
+        for name in DataStore.dataFileNames {
+            #expect(!FileManager.default.fileExists(atPath: docs.appendingPathComponent(name).path))
+        }
+
+        // 3. Restore from blob.
+        try BackupManager.restore(fromData: exportData)
+
+        // 4. Reload decks from disk and confirm everything came back.
+        let reloadedMonsters = MonsterDeck()
+        let reloadedTeams = TeamDeck()
+        let reloadedStudents = StudentDeck()
+        let reloadedBattles = BattleDeck(monsterDeck: reloadedMonsters, teamDeck: reloadedTeams)
+
+        #expect(reloadedMonsters.monsters.first?.name == "Echo")
+        #expect(reloadedTeams.teams.first?.minHP == 200)
+        #expect(reloadedTeams.teams.first?.maxHP == 300)
+        #expect(reloadedStudents.students.first?.name == "Alice")
+        #expect(reloadedStudents.students.first?.score == 17)
+        #expect(reloadedBattles.battles.first?.dmg == 11)
+        #expect(reloadedBattles.battles.first?.monster.name == "Echo")
+        #expect(reloadedBattles.battles.first?.team.name == "Mon")
+    }
+
+    @Test("Restore rotates existing files into .bak1 so a bad restore can be rolled back")
+    func backupManager_restore_rotatesExistingFilesToBackup() throws {
+        // Seed live data.
+        let teamDeck = TeamDeck()
+        teamDeck.teams = [Team(name: "BeforeRestore", minHP: 9, maxHP: 9)]
+        teamDeck.archive()
+
+        // Build an export with DIFFERENT data, then restore it.
+        let altDeck = TeamDeck()
+        altDeck.teams = [Team(name: "AfterRestore", minHP: 5, maxHP: 5)]
+        altDeck.archive()  // overwrites teamDeck.json with AfterRestore
+
+        let exportData = try BackupManager.makeExportData()
+
+        // Now put the "before" data back in place, then restore the "after" blob.
+        teamDeck.teams = [Team(name: "BeforeRestore", minHP: 9, maxHP: 9)]
+        teamDeck.archive()
+
+        try BackupManager.restore(fromData: exportData)
+
+        // teamDeck.json now contains AfterRestore; teamDeck.json.bak1 contains BeforeRestore.
+        let url = DataStore.documentsURL().appendingPathComponent("teamDeck.json")
+        let bak1 = url.appendingPathExtension("bak1")
+
+        let currentStr = String(data: try Data(contentsOf: url), encoding: .utf8) ?? ""
+        let bak1Str = String(data: try Data(contentsOf: bak1), encoding: .utf8) ?? ""
+        #expect(currentStr.contains("AfterRestore"))
+        #expect(bak1Str.contains("BeforeRestore"))
+    }
+
+    @Test("Restoring a malformed backup blob throws and leaves live files untouched")
+    func backupManager_restore_malformedBlob_throws() throws {
+        // Seed known live data.
+        let deck = TeamDeck()
+        deck.teams = [Team(name: "Sacred", minHP: 42, maxHP: 42)]
+        deck.archive()
+
+        let garbage = Data("not a backup file".utf8)
+        #expect(throws: (any Error).self) {
+            try BackupManager.restore(fromData: garbage)
+        }
+
+        // Live file must be unchanged.
+        let reloaded = TeamDeck()
+        #expect(reloaded.teams.first?.name == "Sacred")
+        #expect(reloaded.teams.first?.minHP == 42)
+    }
+
+    @Test("Restoring a backup with an unsupported (newer) version throws cleanly")
+    func backupManager_restore_unsupportedVersion_throws() throws {
+        let json = #"""
+        {
+          "version": 9999,
+          "exportedAt": "2026-05-23T00:00:00Z",
+          "files": {}
+        }
+        """#.data(using: .utf8)!
+
+        #expect(throws: (any Error).self) {
+            try BackupManager.restore(fromData: json)
+        }
+    }
+
+    @Test("Export omits files that don't exist on disk yet (never crashes on a fresh install)")
+    func backupManager_export_handlesMissingFiles() throws {
+        // Documents is empty (init() wiped everything).
+        let data = try BackupManager.makeExportData()
+        let payload = try JSONDecoder().decode(BackupManager.ExportPayload.self, from: data)
+        #expect(payload.version == 1)
+        #expect(payload.files.isEmpty, "Nothing to back up on a fresh install — empty files dict is fine")
     }
 }

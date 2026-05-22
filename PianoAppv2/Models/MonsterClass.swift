@@ -110,6 +110,8 @@ class MiniBoss: Monster {
         // Step 2: Create a path for the JSON file
         let jsonFilePath = documentsDirectory.appendingPathComponent("MiniBoss.json")
 
+        DataStore.rotateBackups(for: jsonFilePath)
+
         // Step 3: Encode data
         do {
             let encoder = JSONEncoder()

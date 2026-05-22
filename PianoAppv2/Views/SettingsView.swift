@@ -21,6 +21,7 @@ struct SettingsView: View {
             ImagePickerView(monsterDeck: monsterDeck)
             MonsterDeckView(monsterDeck: monsterDeck)
             BattleDeckView(monsterDeck: monsterDeck, battleDeck: battleDeck, selectedBattle: $selectedBattle)
+            BackupSection(teamDeck: teamDeck)
         }
     }
 }
