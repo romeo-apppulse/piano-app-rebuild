@@ -97,7 +97,7 @@ writes + backups; **no force-unwraps**; real unit tests, especially the calc log
 | 8 | Leaderboard ties | **Tied students share the placement; next distinct total gets the NEXT number** (her example: two tied at 439 are both 1st, next student is 2nd — 1-1-2). Applied to all three boards. ⚠️ Her verbal formula ("1 + number strictly ahead") contradicts her example (would give 1-1-3); built to the example. `Leaderboards.ranked` is the one place to change. |
 | 9 | Entry editing | **Only the single most recent entry is editable/deletable**; older entries lock. Deletion is top-down only = LIFO undo. `deleteMostRecentEntry` IS `undoLast` (one code path, can never diverge); `editMostRecentAttack` = undo + re-apply at the original timestamp so kill/carryover consequences recompute exactly. Structurally enforced: `CombatLogEntry` fields are `let`, `CombatLog.entries` is private(set), only mutators are append + remove-by-id. |
 
-### Miniboss flow (client spec received 2026-06-26 — build EXACTLY this; implementation PAUSED pending review of the suspend/resume model)
+### Miniboss flow (client spec 2026-06-26 — model approved by user, **BUILT**)
 - Minibosses sit **in the regular monster lineup** — a team encounters one as the next
   monster in their sequence.
 - **Auto-triggered** by the FIRST team to reach it (by defeating the monster before it);
@@ -114,10 +114,12 @@ writes + backups; **no force-unwraps**; real unit tests, especially the calc log
 - The defeated miniboss gets its **own past-leaderboard slot**, distinct from the per-team
   past-monster boards.
 
+**Boundary rule (user default, 2026-06-26): overkill does NOT cross the miniboss
+boundary in either direction** — no carry into a triggered miniboss, no carry out of a
+defeated one; the leftover is discarded.
+
 ### Still OPEN (pending client) — not blocking
 - All-time hall-of-fame vs active-only (decision 7 above).
-- Overkill × miniboss boundaries: does overkill on the trigger kill carry INTO the
-  miniboss? Does overkill on the miniboss carry to the triggering team's next monster?
 - Whether lowering the kill-target below current damage should auto-defeat (current
   behavior: does **not** auto-defeat; remainingHP clamps to 0).
 
@@ -174,35 +176,39 @@ pure/injectable. Verified by adversarial review (compile + logic + test-assertio
 the **real green light is `swift test` on the Mac** (no Swift toolchain on the Windows dev
 box).
 
-### ⏸ CURRENT STATE (2026-06-26, after client answers)
-Client items 2 (tie ranking), 3 (most-recent-only entry editing), and 4 (overkill
-CARRYOVER — reversal of the earlier discard default) are **built with hard undo tests**
-(`CarryoverUndoTests`, `EntryEditingTests`, updated `GameEngineTests`/`LeaderboardsTests`).
-Item 5 (miniboss) is **paused at a written suspend/resume model proposal awaiting the
-user's review** — do not implement until approved. `swift test` on the Mac is still the
-compile/pass gate for everything (no Swift toolchain on the Windows dev box). Migration
-(step 7) remains queued behind the green light.
+### ⏸ CURRENT STATE (2026-06-26, all five client items built)
+Client items 2 (tie ranking), 3 (most-recent-only entry editing), 4 (overkill
+CARRYOVER), and 5 (miniboss flow, model approved) are **built with hard undo tests**
+(`CarryoverUndoTests`, `EntryEditingTests`, `MinibossFlowTests`, updated
+`GameEngineTests`/`LeaderboardsTests`). `swift test` on the Mac is still the compile/pass
+gate for everything (no Swift toolchain on the Windows dev box). Migration (step 7)
+remains queued behind the green light.
 
-### Proposed miniboss suspend/resume model (AWAITING REVIEW — key ideas)
-1. **No snapshot machinery.** Because all battle state (remaining HP, boards) is DERIVED
-   from the log, "pausing" a team requires storing nothing: while a miniboss is alive,
-   attacks simply may not target regular monsters (validation error), so paused monsters
-   cannot change. `state.aliveMiniboss != nil` IS the pause flag. Resume = the validation
-   lifts. Nothing to restore, nothing to corrupt.
-2. **Lineup as data**: `AppState.lineup: [templateID]` (ordered, regular + miniboss slots
-   interleaved) + a per-team progression pointer; replaces the current cyclic-next rule.
-   Successor spawns consume the lineup; teacher lineup edits are undoable actions and only
-   affect FUTURE spawns (paused/live monsters untouched) — which is exactly her
-   "catch-up during the pause" use case.
-3. **Trigger inside resolveDefeat**: when a team's next lineup slot is a miniboss, the
-   defeat spawns the GLOBAL miniboss (teamID nil, averages of ALL students frozen at
-   trigger, miniboss kill-target) as that kill's DefeatOutcome successor — so undoing the
-   trigger kill removes the miniboss via the existing machinery.
-4. **Resume on miniboss defeat**: the triggering team (the only one without an alive
-   monster) gets its next regular monster spawned from the (possibly edited) lineup as the
-   miniboss's DefeatOutcome successor; other teams just become attackable again.
-5. **Past-miniboss board**: derived — most-recently-defeated `kind == .miniboss` record's
-   frozen finalLeaderboard. Zero new storage.
+### Miniboss implementation (approved model, as built)
+1. **No snapshot machinery.** All battle state (remaining HP, boards) is DERIVED from the
+   log, so pausing stores nothing: while a miniboss is alive, `attack()`/`autokill()`
+   reject any other target (`EngineError.minibossActive`). `state.aliveMiniboss != nil`
+   IS the pause flag; resume = the gate lifts. `adjustHP`/`setKillTarget` on paused
+   monsters stay allowed (no spawn risk, undoable).
+2. **Lineup as data**: `AppState.lineup: [LineupSlot]` (slot = own UUID + templateID;
+   shared by all teams) + per-team `Team.nextLineupIndex` (read modulo count, edit-safe).
+   Empty lineup falls back to the legacy cyclic-next-template rule. `GameEngine.setLineup`
+   replaces the whole array — undoable (global scope), validated against the catalog,
+   allowed mid-miniboss (the client's catch-up window).
+3. **Trigger inside resolveDefeat**: a team's defeat whose next unspent lineup slot is a
+   miniboss spawns the GLOBAL miniboss (teamID nil, `triggeredByTeamID` set, ALL students'
+   averages frozen at trigger, miniboss kill-target) as that kill's DefeatOutcome
+   successor. The pointer is deliberately NOT advanced — the slot is consumed by the
+   **spent rule** (a slot is spent iff a MonsterRecord carries its `lineupSlotID`), so
+   undoing the trigger deletes the record and un-spends the slot with zero pointer surgery.
+4. **Resume on miniboss defeat**: the triggering team gets its next regular monster from
+   the (possibly edited) lineup — spent miniboss slots are skipped — as the miniboss's
+   DefeatOutcome successor (its pointer move is recorded in `TeamPointerChange` and
+   restored on undo). Other teams just become attackable again, exactly where they were.
+5. **Past-miniboss board**: `Leaderboards.pastMiniboss(state:)` — most-recently-defeated
+   miniboss record's frozen finalLeaderboard. Zero new storage.
+6. **Boundaries**: no overkill carry into or out of a miniboss (leftover discarded).
+   `MinibossSpawnAction` was removed — minibosses only enter via lineup auto-trigger.
 
 ---
 

@@ -14,25 +14,46 @@
 
 import Foundation
 
+/// A team's lineup-pointer move caused by consuming a slot, stored so undo can put
+/// the pointer back exactly.
+public struct TeamPointerChange: Codable, Equatable {
+    public let teamID: UUID
+    public let fromIndex: Int
+    public let toIndex: Int
+
+    public init(teamID: UUID, fromIndex: Int, toIndex: Int) {
+        self.teamID = teamID
+        self.fromIndex = fromIndex
+        self.toIndex = toIndex
+    }
+}
+
 /// Captured when a monster dies (final blow OR autokill). Holds everything needed to
-/// reverse the defeat: the frozen final board and the successor that was spawned.
+/// reverse the defeat: the frozen final board, the successor that was spawned (which
+/// may be a triggered miniboss), and any lineup-pointer move.
 public struct DefeatOutcome: Codable, Equatable {
     public enum Reason: String, Codable { case finalBlow, autokill }
 
     public let defeatedRecordID: UUID
     public let frozenFinalLeaderboard: [LeaderboardSnapshotRow]
-    /// The successor spawned in the defeated monster's place. nil when nothing
-    /// respawns (e.g. a miniboss event simply ending).
+    /// The successor spawned in the defeated monster's place — a regular monster, or
+    /// the GLOBAL miniboss if this kill triggered one. nil when nothing respawns.
     public let spawnedRecord: MonsterRecord?
+    /// The team lineup-pointer move this defeat caused (nil for a miniboss trigger,
+    /// which deliberately does not advance the pointer — the slot is consumed by the
+    /// spent rule instead, so undoing the trigger needs no pointer surgery).
+    public let teamPointerChange: TeamPointerChange?
     public let reason: Reason
 
     public init(defeatedRecordID: UUID,
                 frozenFinalLeaderboard: [LeaderboardSnapshotRow],
                 spawnedRecord: MonsterRecord?,
+                teamPointerChange: TeamPointerChange? = nil,
                 reason: Reason) {
         self.defeatedRecordID = defeatedRecordID
         self.frozenFinalLeaderboard = frozenFinalLeaderboard
         self.spawnedRecord = spawnedRecord
+        self.teamPointerChange = teamPointerChange
         self.reason = reason
     }
 }
@@ -97,14 +118,18 @@ public struct AutokillAction: Codable, Equatable {
     }
 }
 
-/// Teacher spawns a miniboss event. The full record is stored so undo can remove it.
-/// (Inert until the miniboss lifecycle is built — pending client-approved design.)
-public struct MinibossSpawnAction: Codable, Equatable {
-    public let spawnedRecord: MonsterRecord
+/// Teacher replaces the shared monster lineup (add/delete/reorder are all expressed
+/// as a whole-array replacement). Allowed at any time — INCLUDING while a miniboss is
+/// active, which is the client's intended catch-up/inventory window. Only affects
+/// future spawns; undo restores the previous lineup.
+public struct LineupChangeAction: Codable, Equatable {
+    public let previous: [LineupSlot]
+    public let new: [LineupSlot]
     public let at: Date
 
-    public init(spawnedRecord: MonsterRecord, at: Date) {
-        self.spawnedRecord = spawnedRecord
+    public init(previous: [LineupSlot], new: [LineupSlot], at: Date) {
+        self.previous = previous
+        self.new = new
         self.at = at
     }
 }
@@ -114,18 +139,20 @@ public enum GameAction: Codable, Equatable {
     case adjustHP(HPAdjustAction)
     case setKillTarget(KillTargetAction)
     case autokill(AutokillAction)
-    case spawnMiniboss(MinibossSpawnAction)
+    case setLineup(LineupChangeAction)
 
     /// The monster instance this action concerns (used to resolve which team's
     /// timeline it belongs to for team-scoped undo). For an attack chain this is the
-    /// ORIGINALLY targeted monster; carryover successors share its team.
+    /// ORIGINALLY targeted monster; carryover successors share its team. Lineup edits
+    /// are global (nil) — reachable only by global (unscoped) undo, like miniboss
+    /// attacks (a miniboss has no team).
     public var monsterRecordID: UUID? {
         switch self {
         case .attack(let a):        return a.entries.first?.monsterRecordID
         case .adjustHP(let a):      return a.monsterRecordID
         case .setKillTarget(let a): return a.monsterRecordID
         case .autokill(let a):      return a.outcome.defeatedRecordID
-        case .spawnMiniboss(let a): return a.spawnedRecord.id
+        case .setLineup:            return nil
         }
     }
 }

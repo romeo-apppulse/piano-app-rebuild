@@ -83,6 +83,14 @@ public enum Leaderboards {
         state.previousDefeatedRecord(forTeam: teamID)?.finalLeaderboard ?? []
     }
 
+    /// The frozen top-3 of the most recently defeated MINIBOSS — its own dedicated
+    /// slot (client decision), distinct from the per-team past-monster boards.
+    public static func pastMiniboss(state: AppState) -> [LeaderboardSnapshotRow] {
+        state.ledger.filter { $0.kind == .miniboss && !$0.isAlive }
+            .max(by: { $0.spawnSequence < $1.spawnSequence })?
+            .finalLeaderboard ?? []
+    }
+
     // MARK: - 3. All-time (cumulative since added)
 
     /// Cumulative total damage per student across ALL entries (including `.migration`

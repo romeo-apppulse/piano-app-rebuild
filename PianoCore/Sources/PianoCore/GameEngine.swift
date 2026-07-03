@@ -13,10 +13,17 @@
 //    • Only the MOST RECENT combat-log entry is editable/deletable; older entries are
 //      locked. Deleting the most recent entry IS undo (same operation); editing is
 //      undo + re-apply, so kill/carryover consequences always recompute exactly.
-//    • Teacher admin actions (HP adjust, autokill, miniboss spawn) join the SAME
+//    • Teacher admin actions (HP adjust, autokill, lineup edits) join the SAME
 //      ordered action history as attacks, so there is one unified, scoped Undo.
-//    • Attacks target an explicit monster record id, so the eventual miniboss
-//      targeting UX is NOT baked in here — see the MINIBOSS note in resolveDefeat.
+//    • MINIBOSS (client-approved model): minibosses sit in the shared lineup. The
+//      first team to reach one triggers it for EVERYONE (auto, not manual). While a
+//      miniboss is alive it is the only legal attack target — that validation gate IS
+//      the pause; paused battles are preserved automatically because all battle state
+//      derives from the log. On the miniboss's defeat the triggering team's next
+//      regular monster spawns from the (possibly teacher-edited) lineup and everyone
+//      else simply becomes attackable again. Overkill does NOT cross the miniboss
+//      boundary in either direction (client default): no carry into a triggered
+//      miniboss, no carry out of a defeated one.
 //
 
 import Foundation
@@ -33,6 +40,9 @@ public enum EngineError: Error, Equatable {
     /// The most recent action in scope is not an attack entry (or there is none), so
     /// there is nothing that may be edited/deleted under the most-recent-only policy.
     case noEditableEntry
+    /// A miniboss battle is in progress: it is the only legal target for attacks and
+    /// autokill until it is defeated (all team battles are paused).
+    case minibossActive
 }
 
 public struct AttackResult: Equatable {
@@ -95,6 +105,12 @@ public enum GameEngine {
         guard state.student(studentID) != nil else { return .failure(.studentNotFound) }
         guard let target = state.monsterRecord(targetRecordID) else { return .failure(.monsterNotFound) }
         guard target.isAlive else { return .failure(.monsterAlreadyDefeated) }
+        // MINIBOSS PAUSE GATE: while a miniboss is alive it is the only legal target.
+        // This single check IS the pause — paused monsters cannot change because
+        // nothing can touch them, so their state is preserved with no snapshotting.
+        if let miniboss = state.aliveMiniboss, miniboss.id != targetRecordID {
+            return .failure(.minibossActive)
+        }
 
         var entries: [CombatLogEntry] = []
         var defeats: [DefeatOutcome] = []
@@ -125,11 +141,16 @@ public enum GameEngine {
                                         reason: .finalBlow, killingEntryID: killingEntry.id, at: at)
             defeats.append(outcome)
 
-            // Carry the leftover onto the successor, or stop. The remaining-HP > 0
-            // check is a defensive guard against a zero-HP successor (only possible
-            // with a pathological minimumMonsterHP of 0) looping forever.
+            // Carry the leftover onto the successor, or stop. Boundaries (client
+            // default): overkill never crosses the miniboss boundary — no carry OUT
+            // of a defeated miniboss and no carry INTO a triggered one; the leftover
+            // is discarded. The remaining-HP > 0 check is a defensive guard against a
+            // zero-HP successor (only possible with a pathological minimumMonsterHP
+            // of 0) looping forever.
             guard pending > 0,
+                  current.kind == .regular,
                   let successor = outcome.spawnedRecord,
+                  successor.kind == .regular,
                   state.remainingHP(of: successor) > 0 else { break }
             current = successor
         }
@@ -218,10 +239,36 @@ public enum GameEngine {
                                 at: Date) -> Result<DefeatOutcome, EngineError> {
         guard let record = state.monsterRecord(recordID) else { return .failure(.monsterNotFound) }
         guard record.isAlive else { return .failure(.monsterAlreadyDefeated) }
+        // Same pause gate as attack(): autokilling a paused regular monster would
+        // spawn its successor mid-miniboss. Autokilling the miniboss itself is
+        // allowed — that's how the teacher ends a miniboss early.
+        if let miniboss = state.aliveMiniboss, miniboss.id != recordID {
+            return .failure(.minibossActive)
+        }
         let outcome = resolveDefeat(into: &state, defeatedRecordID: recordID,
                                     reason: .autokill, killingEntryID: nil, at: at)
         state.actions.append(.autokill(AutokillAction(outcome: outcome, at: at)))
         return .success(outcome)
+    }
+
+    // MARK: - Lineup management (teacher admin)
+
+    /// Replaces the shared monster lineup (add/delete/reorder = whole-array replace).
+    /// Explicitly allowed while a miniboss is active — the client uses the pause for
+    /// inventory management and catching up lagging teams. Affects FUTURE spawns
+    /// only; live and paused monsters are untouched. Undoable (global scope).
+    @discardableResult
+    public static func setLineup(into state: inout AppState,
+                                 slots: [LineupSlot],
+                                 at: Date) -> Result<Void, EngineError> {
+        guard slots.allSatisfy({ slot in
+            state.monsterCatalog.contains(where: { $0.id == slot.templateID })
+        }) else { return .failure(.templateNotFound) }
+
+        let previous = state.lineup
+        state.lineup = slots
+        state.actions.append(.setLineup(LineupChangeAction(previous: previous, new: slots, at: at)))
+        return .success(())
     }
 
     // MARK: - Undo (unified, optionally team-scoped)
@@ -253,8 +300,8 @@ public enum GameEngine {
             }
         case .autokill(let a):
             reverseDefeat(a.outcome, &state)
-        case .spawnMiniboss(let a):
-            removeRecordIfEmpty(a.spawnedRecord.id, &state)
+        case .setLineup(let a):
+            state.lineup = a.previous
         }
 
         state.actions.remove(at: i)
@@ -263,8 +310,58 @@ public enum GameEngine {
 
     // MARK: - Shared internals
 
-    /// Mark a monster defeated, freeze its top-3 board, and (for a regular monster)
-    /// spawn the successor. Used by both a final-blow kill and an autokill.
+    /// How a team's next spawn resolves against the shared lineup.
+    private enum SpawnResolution {
+        /// Spawn a regular monster from this template (slot nil = legacy fallback).
+        case regular(templateID: UUID, slotID: UUID?, pointerChange: TeamPointerChange?)
+        /// The team's next unspent slot is a miniboss — trigger the global fight.
+        case minibossTrigger(slot: LineupSlot)
+        /// Nothing to spawn (no team, or a lineup with no usable slot).
+        case none
+    }
+
+    /// Walks the lineup from the team's pointer: the first REGULAR slot is consumed
+    /// (pointer advances past it); an UNSPENT miniboss slot triggers the global fight
+    /// (pointer deliberately NOT advanced — the spent rule consumes the slot, which
+    /// keeps the trigger trivially undoable); spent miniboss slots are skipped. An
+    /// empty lineup falls back to the legacy cyclic-next-template rule so the app
+    /// works before the teacher has configured a lineup.
+    private static func resolveNextSpawn(forTeam teamID: UUID,
+                                         fallbackTemplate: UUID,
+                                         state: AppState) -> SpawnResolution {
+        guard !state.lineup.isEmpty else {
+            let template = nextRegularTemplate(after: fallbackTemplate, in: state) ?? fallbackTemplate
+            return .regular(templateID: template, slotID: nil, pointerChange: nil)
+        }
+        guard let teamIdx = state.teams.firstIndex(where: { $0.id == teamID }) else { return .none }
+
+        let count = state.lineup.count
+        let rawPointer = state.teams[teamIdx].nextLineupIndex
+        var idx = ((rawPointer % count) + count) % count   // safe modulo (edits shrink the lineup)
+
+        for _ in 0..<count {
+            let slot = state.lineup[idx]
+            switch state.monsterCatalog.first(where: { $0.id == slot.templateID })?.kind {
+            case .regular:
+                let change = TeamPointerChange(teamID: teamID,
+                                               fromIndex: rawPointer,
+                                               toIndex: (idx + 1) % count)
+                return .regular(templateID: slot.templateID, slotID: slot.id, pointerChange: change)
+            case .miniboss where !state.isSpent(slot: slot):
+                return .minibossTrigger(slot: slot)
+            default:
+                break   // spent miniboss, or a slot whose template left the catalog — skip
+            }
+            idx = (idx + 1) % count
+        }
+        return .none   // pathological: lineup holds only spent/orphaned slots
+    }
+
+    /// Mark a monster defeated, freeze its top-3 board, and spawn what follows:
+    /// a regular defeat spawns the team's next lineup monster — or TRIGGERS the
+    /// global miniboss if that's their next slot; a miniboss defeat spawns the
+    /// triggering team's next regular monster (the "resume" — everyone else simply
+    /// becomes attackable again). Used by both a final-blow kill and an autokill.
     private static func resolveDefeat(into state: inout AppState,
                                       defeatedRecordID: UUID,
                                       reason: DefeatOutcome.Reason,
@@ -281,40 +378,81 @@ public enum GameEngine {
             state.ledger[idx].finalLeaderboard = frozen
         }
 
-        // Spawn the successor for a regular monster. MINIBOSS: successor/lifecycle is
-        // intentionally NOT handled here — the client-approved suspend/resume design
-        // will land here once reviewed.
         var spawned: MonsterRecord? = nil
+        var pointerChange: TeamPointerChange? = nil
+
         if let defeated = state.monsterRecord(defeatedRecordID),
-           defeated.kind == .regular, let teamID = defeated.teamID {
-            let templateID = nextRegularTemplate(after: defeated.templateID, in: state) ?? defeated.templateID
-            let successor = MonsterRecord(
-                templateID: templateID,
-                kind: .regular,
-                teamID: teamID,
-                spawnedAt: at,
-                spawnSequence: state.nextSpawnSequence,
-                spawnedByEntryID: killingEntryID,
-                spawnAverages: teamSpawnAverages(teamID: teamID, state: state, at: at),
-                // Inherit the defeated monster's kill target for battle continuity.
-                killTargetWeeks: defeated.killTargetWeeks
-            )
-            state.ledger.append(successor)
-            spawned = successor
+           // Regular defeat → that team spawns next. Miniboss defeat → the TRIGGERING
+           // team resumes (it is the only team left without an alive monster).
+           let teamID = (defeated.kind == .regular ? defeated.teamID : defeated.triggeredByTeamID) {
+
+            switch resolveNextSpawn(forTeam: teamID, fallbackTemplate: defeated.templateID, state: state) {
+            case .regular(let templateID, let slotID, let change):
+                let successor = MonsterRecord(
+                    templateID: templateID,
+                    kind: .regular,
+                    teamID: teamID,
+                    spawnedAt: at,
+                    spawnSequence: state.nextSpawnSequence,
+                    spawnedByEntryID: killingEntryID,
+                    spawnAverages: teamSpawnAverages(teamID: teamID, state: state, at: at),
+                    // Inherit a regular predecessor's kill target for battle
+                    // continuity; after a miniboss, start from the default.
+                    killTargetWeeks: defeated.kind == .regular ? defeated.killTargetWeeks
+                                                               : state.settings.defaultKillTargetWeeks,
+                    lineupSlotID: slotID
+                )
+                state.ledger.append(successor)
+                spawned = successor
+                if let change = change,
+                   let teamIdx = state.teams.firstIndex(where: { $0.id == teamID }) {
+                    state.teams[teamIdx].nextLineupIndex = change.toIndex
+                    pointerChange = change
+                }
+
+            case .minibossTrigger(let slot):
+                // Defensive: never two live minibosses (the pause gates make a second
+                // trigger unreachable while one is alive).
+                if state.aliveMiniboss == nil {
+                    let miniboss = MonsterRecord(
+                        templateID: slot.templateID,
+                        kind: .miniboss,
+                        teamID: nil,                                  // fought by everyone
+                        spawnedAt: at,
+                        spawnSequence: state.nextSpawnSequence,
+                        spawnedByEntryID: killingEntryID,
+                        spawnAverages: allStudentAverages(state: state, at: at), // frozen at trigger
+                        killTargetWeeks: state.settings.minibossKillTargetWeeks,
+                        lineupSlotID: slot.id,                        // marks the slot spent
+                        triggeredByTeamID: teamID
+                    )
+                    state.ledger.append(miniboss)
+                    spawned = miniboss
+                }
+
+            case .none:
+                break
+            }
         }
 
         return DefeatOutcome(defeatedRecordID: defeatedRecordID,
                              frozenFinalLeaderboard: frozen,
                              spawnedRecord: spawned,
+                             teamPointerChange: pointerChange,
                              reason: reason)
     }
 
     /// Reverse a defeat: drop the spawned successor (entry-free by the time this runs,
-    /// because undo removes the whole attack chain's entries first) and revive the
-    /// defeated record.
+    /// because undo removes the whole attack chain's entries first), restore the
+    /// team's lineup pointer, and revive the defeated record. Removing a triggered
+    /// miniboss automatically un-spends its slot and lifts the pause.
     private static func reverseDefeat(_ outcome: DefeatOutcome, _ state: inout AppState) {
         if let successor = outcome.spawnedRecord {
             removeRecordIfEmpty(successor.id, &state)
+        }
+        if let change = outcome.teamPointerChange,
+           let teamIdx = state.teams.firstIndex(where: { $0.id == change.teamID }) {
+            state.teams[teamIdx].nextLineupIndex = change.fromIndex
         }
         if let idx = state.ledger.firstIndex(where: { $0.id == outcome.defeatedRecordID }) {
             state.ledger[idx].defeatedAt = nil
@@ -341,6 +479,17 @@ public enum GameEngine {
         let calendar = state.settings.resolvedCalendar
         return state.activeStudents
             .filter { $0.teamID == teamID }
+            .map { StudentAverage(studentID: $0.id,
+                                  average: PracticeMath.dailyAverage(forStudent: $0.id,
+                                                                     entries: state.combatLog.entries,
+                                                                     now: at, calendar: calendar)) }
+    }
+
+    /// Miniboss HP inputs: EVERY active student's daily average, regardless of team,
+    /// frozen at trigger time.
+    private static func allStudentAverages(state: AppState, at: Date) -> [StudentAverage] {
+        let calendar = state.settings.resolvedCalendar
+        return state.activeStudents
             .map { StudentAverage(studentID: $0.id,
                                   average: PracticeMath.dailyAverage(forStudent: $0.id,
                                                                      entries: state.combatLog.entries,

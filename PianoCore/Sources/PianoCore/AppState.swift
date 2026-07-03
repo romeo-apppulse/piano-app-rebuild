@@ -19,6 +19,9 @@ public struct AppState: Codable, Equatable {
     public var students: [Student]
     public var teams: [Team]
     public var monsterCatalog: [MonsterTemplate]
+    /// The shared, ordered monster lineup (see Lineup.swift). Empty = legacy
+    /// cyclic-next-template spawning.
+    public var lineup: [LineupSlot]
     public var ledger: [MonsterRecord]
     public var combatLog: CombatLog
     public var actions: [GameAction]
@@ -30,6 +33,7 @@ public struct AppState: Codable, Equatable {
                 students: [Student] = [],
                 teams: [Team] = [],
                 monsterCatalog: [MonsterTemplate] = [],
+                lineup: [LineupSlot] = [],
                 ledger: [MonsterRecord] = [],
                 combatLog: CombatLog = CombatLog(),
                 actions: [GameAction] = [],
@@ -38,6 +42,7 @@ public struct AppState: Codable, Equatable {
         self.students = students
         self.teams = teams
         self.monsterCatalog = monsterCatalog
+        self.lineup = lineup
         self.ledger = ledger
         self.combatLog = combatLog
         self.actions = actions
@@ -99,5 +104,14 @@ public struct AppState: Codable, Equatable {
     /// The next spawn-ordering number (monotonic across the whole ledger).
     public var nextSpawnSequence: Int {
         (ledger.map { $0.spawnSequence }.max() ?? -1) + 1
+    }
+
+    /// Whether a MINIBOSS lineup slot has been consumed: true if any monster instance
+    /// was spawned from it (alive = fight in progress, defeated = already fought).
+    /// Undo-safe by construction: undoing the trigger deletes the record, un-spending
+    /// the slot. Meaningless for regular slots (every team consumes those
+    /// independently) — only the miniboss spawn path consults it.
+    public func isSpent(slot: LineupSlot) -> Bool {
+        ledger.contains { $0.lineupSlotID == slot.id }
     }
 }

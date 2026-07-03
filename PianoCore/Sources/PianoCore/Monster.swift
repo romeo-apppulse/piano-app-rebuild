@@ -95,6 +95,15 @@ public struct MonsterRecord: Identifiable, Codable, Hashable {
     /// the HP bar is continuous on day one. nil for natively spawned monsters.
     public var legacyFixedHP: Int?
 
+    /// The lineup slot this instance was spawned from (nil for pre-lineup/legacy
+    /// spawns). For MINIBOSS records this marks the slot as globally spent.
+    public let lineupSlotID: UUID?
+
+    /// Miniboss only: the team whose kill triggered this miniboss. On the miniboss's
+    /// defeat, this team (the only one left without an alive monster) gets its next
+    /// regular monster spawned — that's the "resume".
+    public let triggeredByTeamID: UUID?
+
     // --- Lifecycle ---
     public var defeatedAt: Date?
     public var defeatedByEntryID: UUID?
@@ -113,6 +122,8 @@ public struct MonsterRecord: Identifiable, Codable, Hashable {
                 killTargetWeeks: Int,
                 backdoorHPDelta: Int = 0,
                 legacyFixedHP: Int? = nil,
+                lineupSlotID: UUID? = nil,
+                triggeredByTeamID: UUID? = nil,
                 defeatedAt: Date? = nil,
                 defeatedByEntryID: UUID? = nil,
                 finalLeaderboard: [LeaderboardSnapshotRow]? = nil) {
@@ -127,6 +138,8 @@ public struct MonsterRecord: Identifiable, Codable, Hashable {
         self.killTargetWeeks = killTargetWeeks
         self.backdoorHPDelta = backdoorHPDelta
         self.legacyFixedHP = legacyFixedHP
+        self.lineupSlotID = lineupSlotID
+        self.triggeredByTeamID = triggeredByTeamID
         self.defeatedAt = defeatedAt
         self.defeatedByEntryID = defeatedByEntryID
         self.finalLeaderboard = finalLeaderboard
