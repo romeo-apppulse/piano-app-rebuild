@@ -158,6 +158,12 @@ final class GameStore: ObservableObject {
     }
 
     func removeTemplate(_ id: UUID) {
+        // If the lineup still references this template, drop those slots FIRST through
+        // the typed engine (undoable) — otherwise the engine would silently skip the
+        // orphaned slots. setLineup validates against the catalog, and the surviving
+        // slots' templates all still exist at this point, so it passes.
+        let cleaned = state.lineup.filter { $0.templateID != id }
+        if cleaned.count != state.lineup.count { setLineup(cleaned) }
         apply { $0.monsterCatalog.removeAll { $0.id == id } }
     }
 

@@ -17,6 +17,9 @@ struct BackupView: View {
     @State private var showImporter = false
     @State private var document: AppBackupDocument?
     @State private var status: String?
+    /// Holds a picked backup awaiting confirmation — Restore replaces EVERYTHING, so it
+    /// must never fire on a single mis-tap.
+    @State private var pendingRestore: Data?
 
     var body: some View {
         List {
@@ -61,14 +64,28 @@ struct BackupView: View {
             case .success(let url):
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                if let data = try? Data(contentsOf: url), store.importBackup(data) {
-                    status = "Restore complete."
+                if let data = try? Data(contentsOf: url) {
+                    pendingRestore = data   // gate behind an explicit confirmation
                 } else {
-                    status = "Restore failed: could not read or decode that file."
+                    status = "Restore failed: could not read that file."
                 }
             case .failure(let error):
                 status = "Could not open file: \(error.localizedDescription)"
             }
+        }
+        .confirmationDialog("Replace ALL current data with this backup? The current state is discarded.",
+                            isPresented: Binding(get: { pendingRestore != nil },
+                                                 set: { if !$0 { pendingRestore = nil } }),
+                            titleVisibility: .visible) {
+            Button("Replace everything", role: .destructive) {
+                if let data = pendingRestore, store.importBackup(data) {
+                    status = "Restore complete."
+                } else {
+                    status = "Restore failed: that file is not a valid backup."
+                }
+                pendingRestore = nil
+            }
+            Button("Cancel", role: .cancel) { pendingRestore = nil }
         }
     }
 

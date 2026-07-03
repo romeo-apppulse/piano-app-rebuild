@@ -14,10 +14,14 @@ struct LineupView: View {
     @EnvironmentObject private var store: GameStore
 
     @State private var slots: [LineupSlot] = []
+    /// The last-known store lineup this editor was in sync with. `dirty` compares against
+    /// this (not the live store) so an external change (e.g. an undo) can be adopted
+    /// without falsely reading as a pending edit.
+    @State private var baseline: [LineupSlot] = []
     @State private var loaded = false
     @State private var addTemplateID: UUID?
 
-    private var dirty: Bool { slots != store.state.lineup }
+    private var dirty: Bool { slots != baseline }
 
     var body: some View {
         List {
@@ -63,12 +67,16 @@ struct LineupView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { EditButton() }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Save") { store.setLineup(slots) }
+                Button("Save") { store.setLineup(slots); baseline = slots }
                     .bold()
                     .disabled(!dirty)
             }
         }
-        .onAppear { if !loaded { slots = store.state.lineup; loaded = true } }
+        .onAppear { if !loaded { slots = store.state.lineup; baseline = slots; loaded = true } }
+        .onChange(of: store.state.lineup) { newValue in
+            // Adopt an external change only when the user has no pending edits.
+            if slots == baseline { slots = newValue; baseline = newValue }
+        }
     }
 
     private func template(_ slot: LineupSlot) -> MonsterTemplate? {

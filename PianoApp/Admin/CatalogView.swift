@@ -61,7 +61,11 @@ struct CatalogView: View {
                     }
                 }
                 .onDelete { indexSet in
-                    for index in indexSet { store.removeTemplate(store.state.monsterCatalog[index].id) }
+                    // Resolve ids up front: removeTemplate mutates the array, so indices
+                    // captured against the old array would point at the wrong/absent row
+                    // on a multi-row delete.
+                    let ids = indexSet.map { store.state.monsterCatalog[$0].id }
+                    for id in ids { store.removeTemplate(id) }
                 }
             }
         }
