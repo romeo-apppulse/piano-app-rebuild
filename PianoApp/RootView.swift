@@ -2,9 +2,9 @@
 //  RootView.swift
 //  PianoApp
 //
-//  Skeleton root for the rebuild. Proves the GameStore ↔ PianoCore wiring and the
-//  first-launch/migration path render. The real UI (immersive battle view + teacher
-//  NavigationSplitView admin) replaces this in the next step.
+//  For this slice the app root IS the teacher admin (a NavigationSplitView sidebar).
+//  The immersive kid-facing battle view lands in a following pass and will become the
+//  primary surface, with admin behind a gate.
 //
 
 import SwiftUI
@@ -12,47 +12,78 @@ import PianoCore
 
 struct RootView: View {
     @EnvironmentObject private var store: GameStore
+    @State private var section: AdminSection? = .roster
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Loaded state") {
-                    stat("Students", store.state.students.count)
-                    stat("Teams", store.state.teams.count)
-                    stat("Monster catalog", store.state.monsterCatalog.count)
-                    stat("Lineup slots", store.state.lineup.count)
-                    stat("Monster records", store.state.ledger.count)
-                    stat("Actions logged", store.state.actions.count)
-                    stat("Schema version", store.state.schemaVersion)
-                }
-
-                if let report = store.migrationReport {
-                    Section("Migration report") {
-                        if report.warnings.isEmpty {
-                            Label("No warnings", systemImage: "checkmark.seal")
-                        } else {
-                            ForEach(report.warnings, id: \.self) { warning in
-                                Label(warning, systemImage: "exclamationmark.triangle")
-                                    .font(.footnote)
-                            }
-                        }
-                        ForEach(report.notes, id: \.self) { note in
-                            Text(note).font(.footnote).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                if let saveError = store.saveError {
-                    Section("Save error") {
-                        Text(saveError).foregroundStyle(.red).font(.footnote)
-                    }
+        NavigationSplitView {
+            List(selection: $section) {
+                ForEach(AdminSection.allCases) { section in
+                    Label(section.title, systemImage: section.symbol)
+                        .font(.title3.weight(.semibold))
+                        .padding(.vertical, 6)
+                        .tag(section)
                 }
             }
-            .navigationTitle("PianoApp — rebuild skeleton")
+            .navigationTitle("Teacher Admin")
+            .safeAreaInset(edge: .bottom) { footer }
+        } detail: {
+            NavigationStack {
+                detail(for: section ?? .roster)
+            }
         }
     }
 
-    private func stat(_ label: String, _ value: Int) -> some View {
-        LabeledContent(label, value: "\(value)")
+    @ViewBuilder
+    private func detail(for section: AdminSection) -> some View {
+        switch section {
+        case .roster:   RosterView()
+        case .teams:    TeamsView()
+        case .catalog:  CatalogView()
+        case .lineup:   LineupView()
+        case .averages: AveragesView()
+        case .backdoor: BackdoorView()
+        case .backup:   BackupView()
+        }
+    }
+
+    @ViewBuilder
+    private var footer: some View {
+        VStack(spacing: 8) {
+            if let saveError = store.saveError {
+                Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+            #if DEBUG
+            DebugBar()
+            #endif
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 8)
     }
 }
+
+#if DEBUG
+/// DEBUG-only controls to exercise the migration path with sample legacy data.
+private struct DebugBar: View {
+    @EnvironmentObject private var store: GameStore
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                store.debugSeedFromSampleLegacyData()
+            } label: {
+                Label("Seed legacy", systemImage: "tray.and.arrow.down.fill")
+            }
+            Button(role: .destructive) {
+                store.debugResetToEmpty()
+            } label: {
+                Label("Reset", systemImage: "trash")
+            }
+        }
+        .font(.footnote.weight(.semibold))
+        .buttonStyle(.bordered)
+    }
+}
+#endif

@@ -6,10 +6,12 @@
 //
 //  Invariants:
 //    • `state` is the single source of truth; it is private(set) so views can only
-//      change it by calling a method here, and every method funnels the mutation
-//      through GameEngine (gameplay) or a scoped `apply` (roster/catalog CRUD).
-//    • Every mutation is followed by an atomic save via JSONFilePersistence.
-//    • A failed save never crashes; it surfaces on `saveError` for the UI to show.
+//      change it by calling a method here.
+//    • GAMEPLAY mutations funnel through the typed GameEngine methods (attack, adjustHP,
+//      setKillTarget, autokill, setLineup, spawn, undo). `apply(_:)` is reserved
+//      STRICTLY for roster/team/catalog CRUD the engine does not own.
+//    • Every mutation is followed by an atomic save via JSONFilePersistence; a failed
+//      save never crashes — it surfaces on `saveError` for the UI to show.
 //
 
 import Foundation
@@ -19,7 +21,7 @@ import PianoCore
 final class GameStore: ObservableObject {
     @Published private(set) var state: AppState
     @Published var saveError: String?
-    /// Set once on first launch if legacy data was migrated; drives a one-time report.
+    /// Set once on first launch (or the DEBUG exerciser) if legacy data was migrated.
     @Published private(set) var migrationReport: MigrationReport?
 
     private let persistence: JSONFilePersistence
@@ -36,18 +38,15 @@ final class GameStore: ObservableObject {
             do {
                 state = try persistence.load()
             } catch {
-                // Corrupt/undecodable file: start clean rather than crash, but tell the
-                // teacher — the rolling .bak files remain on disk for manual recovery.
                 state = AppState()
                 saveError = "Could not load saved data (\(error)). Started with an empty board; a backup may exist."
             }
         } else if let legacy = LegacyLoader.load(fromDirectory: directory) {
             let (migrated, report) = Migration.migrate(legacy.data, at: Date())
             state = migrated
-            var report2 = report
-            report2.notes.append(contentsOf: legacy.warnings)
-            migrationReport = report2
-            // Persist immediately so migration is one-time (idempotence guard = file exists).
+            var enriched = report
+            enriched.notes.append(contentsOf: legacy.warnings)
+            migrationReport = enriched
             do { try persistence.save(migrated) }
             catch { saveError = "Migration succeeded but the first save failed: \(error)" }
         } else {
@@ -55,11 +54,14 @@ final class GameStore: ObservableObject {
         }
     }
 
+    /// Documents directory, guarded — no force-index. Falls back to a temp dir so the
+    /// app can still run (in-memory + best-effort save) rather than trap.
     nonisolated static var documentsDirectory: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
     }
 
-    // MARK: - Gameplay mutations (every change goes through GameEngine)
+    // MARK: - Gameplay (TYPED engine methods only — never `apply`)
 
     func spawnInitialMonster(teamID: UUID, templateID: UUID, at date: Date = Date()) {
         commit { _ = GameEngine.spawnInitialMonster(into: &$0, teamID: teamID, templateID: templateID, at: date) }
@@ -100,10 +102,104 @@ final class GameStore: ObservableObject {
         return undone
     }
 
-    /// Escape hatch for admin CRUD the engine doesn't own (roster/team/catalog edits).
-    /// Still funnels through the same persist-after-mutate path so nothing bypasses saving.
+    // MARK: - Roster / Team / Catalog CRUD (the ONLY callers of `apply`)
+
+    func addStudent(name: String, teamID: UUID?) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        apply { $0.students.append(Student(name: trimmed, teamID: teamID, createdAt: Date())) }
+    }
+
+    func renameStudent(_ id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        apply { if let i = $0.students.firstIndex(where: { $0.id == id }) { $0.students[i].name = trimmed } }
+    }
+
+    func assignStudent(_ id: UUID, toTeam teamID: UUID?) {
+        apply { if let i = $0.students.firstIndex(where: { $0.id == id }) { $0.students[i].teamID = teamID } }
+    }
+
+    /// Soft-delete only: history is never destroyed (see Student.isActive).
+    func setStudent(_ id: UUID, active: Bool) {
+        apply { if let i = $0.students.firstIndex(where: { $0.id == id }) { $0.students[i].isActive = active } }
+    }
+
+    func addTeam(name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        apply { $0.teams.append(Team(name: trimmed)) }
+    }
+
+    func renameTeam(_ id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        apply { if let i = $0.teams.firstIndex(where: { $0.id == id }) { $0.teams[i].name = trimmed } }
+    }
+
+    /// Removes a team and un-assigns its students (their history stays intact).
+    func removeTeam(_ id: UUID) {
+        apply {
+            $0.teams.removeAll { $0.id == id }
+            for i in $0.students.indices where $0.students[i].teamID == id { $0.students[i].teamID = nil }
+        }
+    }
+
+    func addTemplate(name: String, kind: MonsterKind, artist: String?, imageFileName: String?) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        apply { $0.monsterCatalog.append(MonsterTemplate(name: trimmed, imageFileName: imageFileName, artist: artist, kind: kind)) }
+    }
+
+    func renameTemplate(_ id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        apply { if let i = $0.monsterCatalog.firstIndex(where: { $0.id == id }) { $0.monsterCatalog[i].name = trimmed } }
+    }
+
+    func removeTemplate(_ id: UUID) {
+        apply { $0.monsterCatalog.removeAll { $0.id == id } }
+    }
+
+    /// The escape hatch for roster/team/catalog CRUD only. Gameplay must NOT use this —
+    /// it goes through the typed engine methods above so undo/log invariants hold.
     func apply(_ transform: (inout AppState) -> Void) {
         commit(transform)
+    }
+
+    // MARK: - Reads / derived
+
+    func dailyAverage(for studentID: UUID, now: Date = Date()) -> Double {
+        PracticeMath.dailyAverage(forStudent: studentID,
+                                  entries: state.combatLog.entries,
+                                  now: now,
+                                  calendar: state.settings.resolvedCalendar)
+    }
+
+    func liveMonster(forTeam teamID: UUID) -> MonsterRecord? {
+        state.aliveRegularRecord(forTeam: teamID)
+    }
+
+    // MARK: - Backup (export / restore the whole appState)
+
+    func exportData() -> Data? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try? encoder.encode(state)
+    }
+
+    @discardableResult
+    func importBackup(_ data: Data) -> Bool {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let imported = try? decoder.decode(AppState.self, from: data) else {
+            saveError = "Restore failed: that file is not a valid PianoApp backup."
+            return false
+        }
+        state = imported
+        do { try persistence.save(state); saveError = nil; return true }
+        catch { saveError = "Restore save failed: \(error)"; return false }
     }
 
     // MARK: - Internals
@@ -117,4 +213,32 @@ final class GameStore: ObservableObject {
             saveError = "Save failed: \(error)"
         }
     }
+
+    #if DEBUG
+    /// DEBUG-ONLY migration exerciser. Writes fixture LEGACY json into the DEV sandbox,
+    /// clears appState.json, and re-runs the real first-launch migration so the admin
+    /// screens have data to show. Never touches the live app's real data — it operates
+    /// on this build's own sandbox directory.
+    func debugSeedFromSampleLegacyData() {
+        DebugFixtures.writeSampleLegacyFiles(to: persistence.directory)
+        try? FileManager.default.removeItem(at: persistence.fileURL)
+        guard let legacy = LegacyLoader.load(fromDirectory: persistence.directory) else { return }
+        let (migrated, report) = Migration.migrate(legacy.data, at: Date())
+        state = migrated
+        var enriched = report
+        enriched.notes.append(contentsOf: legacy.warnings)
+        migrationReport = enriched
+        do { try persistence.save(migrated); saveError = nil }
+        catch { saveError = "Debug seed save failed: \(error)" }
+    }
+
+    /// DEBUG-ONLY: wipe back to an empty board (dev sandbox only).
+    func debugResetToEmpty() {
+        try? FileManager.default.removeItem(at: persistence.fileURL)
+        state = AppState()
+        migrationReport = nil
+        saveError = nil
+        try? persistence.save(state)
+    }
+    #endif
 }
