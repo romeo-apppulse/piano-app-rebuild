@@ -16,17 +16,35 @@ final class LeaderboardsTests: XCTestCase {
                        amount: amount, timestamp: Date(timeIntervalSince1970: 0), origin: origin)
     }
 
-    func testDenseRankingSharesRankOnTieWithNoGaps() {
+    /// The client's exact worked example: two students tied at 439 are BOTH "1st
+    /// place"; the next student is "2nd place" (not 3rd).
+    func testClientTieExampleSharedPlacementAndNextNumber() {
         let a = UUID(); let b = UUID(); let c = UUID()
         let rows = Leaderboards.ranked([
-            (id: a, name: "Ann", total: 10),
+            (id: a, name: "Ann", total: 439),
+            (id: b, name: "Bob", total: 439),
+            (id: c, name: "Cy",  total: 300),
+        ])
+        let byId = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+        XCTAssertEqual(byId[a]?.rank, 1)   // tied at 439 → both 1st
+        XCTAssertEqual(byId[b]?.rank, 1)
+        XCTAssertEqual(byId[c]?.rank, 2)   // next student is 2nd, NOT 3rd
+    }
+
+    /// The same rule holds deeper in the board: 1st, 2nd-tie, 2nd-tie, 3rd.
+    func testSharedPlacementCascadesThroughTheBoard() {
+        let a = UUID(); let b = UUID(); let c = UUID(); let d = UUID()
+        let rows = Leaderboards.ranked([
+            (id: a, name: "Ann", total: 50),
             (id: b, name: "Bob", total: 10),
-            (id: c, name: "Cy",  total: 5),
+            (id: c, name: "Cy",  total: 10),
+            (id: d, name: "Di",  total: 5),
         ])
         let byId = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
         XCTAssertEqual(byId[a]?.rank, 1)
-        XCTAssertEqual(byId[b]?.rank, 1)   // tie shares rank 1
-        XCTAssertEqual(byId[c]?.rank, 2)   // dense: next distinct total is rank 2, not 3
+        XCTAssertEqual(byId[b]?.rank, 2)   // tie shares 2nd
+        XCTAssertEqual(byId[c]?.rank, 2)
+        XCTAssertEqual(byId[d]?.rank, 3)   // next number, no gap
     }
 
     func testCurrentMonsterIsScopedToOneInstanceAndResetsAcrossMonsters() {

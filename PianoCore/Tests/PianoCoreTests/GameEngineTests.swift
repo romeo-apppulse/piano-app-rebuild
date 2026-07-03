@@ -1,9 +1,10 @@
 //
-//  GameEngineTests.swift — the game logic: attack/defeat, backdoor controls, and the
-//  unified undo (including kill reversal). Pure, no filesystem.
+//  GameEngineTests.swift — the game logic: attack/defeat with carryover, backdoor
+//  controls, and the unified undo (including kill reversal). Pure, no filesystem.
 //
-//  Monster HP is pinned via legacyFixedHP so these tests isolate the engine flow from
-//  the averaging math (which has its own suite).
+//  The first monster's HP is pinned via legacyFixedHP so these tests isolate the
+//  engine flow from the averaging math (which has its own suite). Successor HP is
+//  formula-derived; where a test asserts it, the expectation is computed in a comment.
 //
 
 import XCTest
@@ -13,8 +14,8 @@ final class GameEngineTests: XCTestCase {
 
     private func t(_ s: Int) -> Date { Date(timeIntervalSince1970: TimeInterval(s)) }
 
-    /// Base fixture: one team, one student, a catalog of two regular templates, and one
-    /// alive monster with a pinned HP.
+    /// Base fixture: one team, one student on it, a catalog of two regular templates,
+    /// and one alive monster with a pinned HP of `hp`.
     private func makeState(hp: Int = 10)
         -> (state: AppState, team: UUID, student: UUID, monster: UUID, t1: UUID, t2: UUID) {
         let team = UUID(); let stu = UUID(); let t1 = UUID(); let t2 = UUID(); let monsterID = UUID()
@@ -31,12 +32,23 @@ final class GameEngineTests: XCTestCase {
         return (state, team, stu, monsterID, t1, t2)
     }
 
+    /// Asserts two states are identical except for the never-reused sequence counter
+    /// (undo removes entries but intentionally does not roll `nextSequence` back).
+    private func assertEqualModuloSequenceCounter(_ actual: AppState, _ expected: AppState,
+                                                  file: StaticString = #filePath, line: UInt = #line) {
+        var adjusted = expected
+        adjusted.combatLog = CombatLog(entries: expected.combatLog.entries,
+                                       nextSequence: actual.combatLog.nextSequence)
+        XCTAssertEqual(actual, adjusted, file: file, line: line)
+    }
+
     func testAttackReducesRemainingHPWithoutKilling() {
         var (state, _, stu, monster, _, _) = makeState(hp: 10)
         let result = try! GameEngine.attack(into: &state, targetRecordID: monster,
                                             studentID: stu, amount: 4, at: t(100)).get()
         XCTAssertFalse(result.killed)
-        XCTAssertNil(result.outcome)
+        XCTAssertEqual(result.entries.count, 1)
+        XCTAssertEqual(result.defeats.count, 0)
         XCTAssertEqual(state.combatLog.entries.count, 1)
         XCTAssertEqual(state.actions.count, 1)
         let rec = state.monsterRecord(monster)!
@@ -45,62 +57,76 @@ final class GameEngineTests: XCTestCase {
         XCTAssertEqual(state.ledger.count, 1) // no successor yet
     }
 
-    func testKillSpawnsSuccessorFreezesBoardAndDiscardsOverflow() {
+    func testKillCapsEntrySpawnsSuccessorAndCarriesOverflow() {
         var (state, team, stu, monster, t1, t2) = makeState(hp: 10)
         _ = try! GameEngine.attack(into: &state, targetRecordID: monster, studentID: stu, amount: 4, at: t(100)).get()
         let kill = try! GameEngine.attack(into: &state, targetRecordID: monster, studentID: stu, amount: 9, at: t(200)).get()
 
         XCTAssertTrue(kill.killed)
-        // Overflow discarded: the killing entry keeps its FULL amount (9), not 6.
-        XCTAssertEqual(kill.entry.amount, 9)
+        // Carryover: the killing entry is CAPPED at the remaining HP (6); the leftover
+        // (3) lands on the successor as its own entry. Same student, same timestamp.
+        XCTAssertEqual(kill.entries.map { $0.amount }, [6, 3])
+        XCTAssertEqual(kill.defeats.count, 1)
+        XCTAssertEqual(kill.entries[1].timestamp, t(200))
+        XCTAssertEqual(kill.entries[1].studentID, stu)
 
-        // Defeated record: frozen board credits the student the full 13 (4 + 9).
+        // Defeated record: frozen board credits exactly the damage that killed it
+        // (4 + capped 6 = 10), NOT the carried-over 3.
         let defeated = state.monsterRecord(monster)!
         XCTAssertFalse(defeated.isAlive)
-        XCTAssertEqual(defeated.finalLeaderboard?.first?.totalDamage, 13)
+        XCTAssertEqual(defeated.finalLeaderboard?.first?.totalDamage, 10)
         XCTAssertEqual(defeated.finalLeaderboard?.first?.rank, 1)
 
-        // Successor: alive, same team, next template (t2), zero entries → full HP.
+        // Successor: alive, same team, next template (t2), carrying exactly 3 damage.
         XCTAssertEqual(state.ledger.count, 2)
         let successor = state.aliveRegularRecord(forTeam: team)!
         XCTAssertEqual(successor.templateID, t2)
-        XCTAssertEqual(state.damageDealt(toMonster: successor.id), 0)
-        XCTAssertEqual(successor.spawnedByEntryID, kill.entry.id)
         XCTAssertNotEqual(t1, t2)
+        XCTAssertEqual(state.damageDealt(toMonster: successor.id), 3)
+        XCTAssertEqual(kill.entries[1].monsterRecordID, successor.id)
+        XCTAssertEqual(successor.spawnedByEntryID, kill.entries[0].id)
 
-        // Two attack actions; the second carries the defeat outcome.
+        // Successor HP from frozen averages: live entries 4 + 6 on one calendar day
+        // → daily average 10 → ceil(10 × 3 weeks) = 30. Carry 3 → remaining 27.
+        XCTAssertEqual(state.effectiveHP(of: successor), 30)
+        XCTAssertEqual(state.remainingHP(of: successor), 27)
+
+        // One action per attack; the kill+carry chain is ONE action.
         XCTAssertEqual(state.actions.count, 2)
     }
 
     func testUndoNormalAttackRestoresState() {
         var (state, team, stu, monster, _, _) = makeState(hp: 10)
+        let before = state
         _ = try! GameEngine.attack(into: &state, targetRecordID: monster, studentID: stu, amount: 4, at: t(100)).get()
 
         XCTAssertTrue(GameEngine.undoLast(into: &state, teamScope: team))
-        XCTAssertEqual(state.combatLog.entries.count, 0)
-        XCTAssertEqual(state.actions.count, 0)
-        XCTAssertEqual(state.remainingHP(of: state.monsterRecord(monster)!), 10)
+        assertEqualModuloSequenceCounter(state, before)
         // Nothing left to undo.
         XCTAssertFalse(GameEngine.undoLast(into: &state, teamScope: team))
     }
 
-    func testUndoAcrossKillRevivesMonsterAndRemovesSuccessor() {
+    func testUndoAcrossKillReversesKillSpawnCarryAndLockIn() {
         var (state, team, stu, monster, _, _) = makeState(hp: 10)
         _ = try! GameEngine.attack(into: &state, targetRecordID: monster, studentID: stu, amount: 4, at: t(100)).get()
+        let beforeKill = state
         _ = try! GameEngine.attack(into: &state, targetRecordID: monster, studentID: stu, amount: 9, at: t(200)).get()
         XCTAssertEqual(state.ledger.count, 2)
 
-        // Undo the killing blow.
+        // Undo the kill+carry chain in one step.
         XCTAssertTrue(GameEngine.undoLast(into: &state, teamScope: team))
 
         let revived = state.monsterRecord(monster)!
         XCTAssertTrue(revived.isAlive)              // kill reversed
         XCTAssertNil(revived.finalLeaderboard)      // lock-in cleared
         XCTAssertNil(revived.defeatedByEntryID)
-        XCTAssertEqual(state.ledger.count, 1)       // successor removed
+        XCTAssertEqual(state.ledger.count, 1)       // successor (and its carry) gone
         XCTAssertEqual(state.combatLog.entries.count, 1) // only the first (4) remains
         XCTAssertEqual(state.remainingHP(of: revived), 6)
         XCTAssertEqual(state.actions.count, 1)
+
+        // The world is bit-identical to just before the kill (modulo the counter).
+        assertEqualModuloSequenceCounter(state, beforeKill)
     }
 
     func testAdjustHPAppliesAndUndoes() {
@@ -143,6 +169,7 @@ final class GameEngineTests: XCTestCase {
         XCTAssertEqual(state.monsterRecord(monster)!.finalLeaderboard?.first?.totalDamage, 5)
         let successor = state.aliveRegularRecord(forTeam: team)!
         XCTAssertEqual(successor.templateID, t2)
+        XCTAssertEqual(state.damageDealt(toMonster: successor.id), 0) // autokill never carries
 
         // Undo the autokill: monster revives, successor removed, the prior attack stays.
         XCTAssertTrue(GameEngine.undoLast(into: &state, teamScope: team))
@@ -153,8 +180,10 @@ final class GameEngineTests: XCTestCase {
 
     func testBackdoorControlsRejectDefeatedMonsters() {
         var (state, _, stu, monster, _, _) = makeState(hp: 5)
-        _ = try! GameEngine.attack(into: &state, targetRecordID: monster, studentID: stu, amount: 5, at: t(100)).get()
-        XCTAssertFalse(state.monsterRecord(monster)!.isAlive) // defeated; a successor is now alive
+        // Exact kill: capped entry of 5, zero leftover — successor spawns with no carry.
+        let kill = try! GameEngine.attack(into: &state, targetRecordID: monster, studentID: stu, amount: 5, at: t(100)).get()
+        XCTAssertEqual(kill.entries.map { $0.amount }, [5])
+        XCTAssertFalse(state.monsterRecord(monster)!.isAlive)
 
         if case .failure(let e) = GameEngine.adjustHP(into: &state, recordID: monster, delta: 10, at: t(200)) {
             XCTAssertEqual(e, .monsterAlreadyDefeated)
@@ -170,7 +199,7 @@ final class GameEngineTests: XCTestCase {
         let teamA = UUID(); let teamB = UUID()
         let sA = UUID(); let sB = UUID()
         let mA = UUID(); let mB = UUID(); let tpl = UUID()
-        let state0 = AppState(
+        var state = AppState(
             students: [Student(id: sA, name: "A", teamID: teamA, createdAt: t(0)),
                        Student(id: sB, name: "B", teamID: teamB, createdAt: t(0))],
             teams: [Team(id: teamA, name: "Reds"), Team(id: teamB, name: "Blues")],
@@ -182,7 +211,6 @@ final class GameEngineTests: XCTestCase {
                               spawnedAt: t(0), spawnSequence: 1, killTargetWeeks: 3, legacyFixedHP: 100),
             ]
         )
-        var state = state0
         _ = try! GameEngine.attack(into: &state, targetRecordID: mA, studentID: sA, amount: 5, at: t(100)).get()
         _ = try! GameEngine.attack(into: &state, targetRecordID: mB, studentID: sB, amount: 7, at: t(200)).get()
 
@@ -195,7 +223,6 @@ final class GameEngineTests: XCTestCase {
 
     func testAttackValidationErrors() {
         var (state, _, stu, monster, _, _) = makeState(hp: 10)
-        XCTAssertEqual(try? GameEngine.attack(into: &state, targetRecordID: monster, studentID: stu, amount: -1, at: t(1)).get(), nil)
         // Negative amount rejected, state untouched.
         if case .failure(let e) = GameEngine.attack(into: &state, targetRecordID: monster, studentID: stu, amount: -1, at: t(1)) {
             XCTAssertEqual(e, .negativeAmount)

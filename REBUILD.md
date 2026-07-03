@@ -88,22 +88,38 @@ writes + backups; **no force-unwraps**; real unit tests, especially the calc log
 | # | Decision | Choice |
 |---|---|---|
 | 1 | Monster scope | **Per-team, concurrent** — each team fights its own monster. Leaderboards + undo are team-scoped. |
-| 2 | HP behavior | **Freeze inputs at spawn** — each monster stores `spawnAverages`; HP recomputes only when the kill-target changes (or via the backdoor delta). Prevents the moving-target bug and stops the sliding window corrupting past monsters. |
+| 2 | HP behavior | **Freeze inputs at spawn** — each monster stores `spawnAverages`; HP recomputes only when the kill-target changes (or via the backdoor delta). Prevents the moving-target bug and stops the sliding window corrupting past monsters. Manual-to-auto transition confirmed: manual first-monster HP (`legacyFixedHP`), engine takes over as real practice accrues. |
 | 3 | Daily-average window | **Rolling 90 days** (literal last-90-days, not calendar months), as the single constant `AverageWindow.windowDays`. Inclusive lower bound. |
 | 4 | Undo model | **One unified action history.** Teacher admin actions (HP adjust, autokill, miniboss spawn) are undoable actions, not just attacks. |
-| 5 | Overkill damage | **Discarded** — the killing student is credited their full hit; the successor spawns fresh at full HP. |
+| 5 | Overkill damage | **CARRIES OVER** (client reversed the earlier default 2026-06-26) — the killing entry is capped at the dying monster's remaining HP; the leftover rolls onto the freshly spawned successor as its own entry, chaining if it kills the successor too. The whole chain is ONE action; a single undo reverses all of it (entries, spawns, defeats, lock-ins). Leftover with no successor is discarded. |
 | 6 | Day-one seeding | Built as a flippable flag `seedLeaderboardsFromLegacyScore`; migration seeds are excluded from average math. |
-| 7 | All-time membership | **Active students only** (removed students keep history but are hidden). ⚠️ flagged — confirm vs hall-of-fame. |
+| 7 | All-time membership | **Active students only** (removed students keep history but are hidden). Client hasn't decided vs hall-of-fame — keep this default. |
+| 8 | Leaderboard ties | **Tied students share the placement; next distinct total gets the NEXT number** (her example: two tied at 439 are both 1st, next student is 2nd — 1-1-2). Applied to all three boards. ⚠️ Her verbal formula ("1 + number strictly ahead") contradicts her example (would give 1-1-3); built to the example. `Leaderboards.ranked` is the one place to change. |
+| 9 | Entry editing | **Only the single most recent entry is editable/deletable**; older entries lock. Deletion is top-down only = LIFO undo. `deleteMostRecentEntry` IS `undoLast` (one code path, can never diverge); `editMostRecentAttack` = undo + re-apply at the original timestamp so kill/carryover consequences recompute exactly. Structurally enforced: `CombatLogEntry` fields are `let`, `CombatLog.entries` is private(set), only mutators are append + remove-by-id. |
+
+### Miniboss flow (client spec received 2026-06-26 — build EXACTLY this; implementation PAUSED pending review of the suspend/resume model)
+- Minibosses sit **in the regular monster lineup** — a team encounters one as the next
+  monster in their sequence.
+- **Auto-triggered** by the FIRST team to reach it (by defeating the monster before it);
+  NOT started manually by the teacher.
+- At trigger, **ALL teams pause** their current battles; each team's in-progress state
+  (monster, remaining HP, current-monster leaderboard) must be frozen and preserved.
+- Everyone fights the miniboss together. Miniboss HP = Σ(ALL students' daily averages) ×
+  miniboss kill-target (default 6, configurable), **inputs frozen at trigger time**.
+- On miniboss defeat, every team **resumes exactly** the battle they were paused on —
+  unless the teacher edited the lineup during the pause.
+- **Lineup editing during the pause is an intended feature** (inventory management,
+  catch-up for lagging teams): delete/add monsters, adjust what a team will face next;
+  teams resume per the updated lineup.
+- The defeated miniboss gets its **own past-leaderboard slot**, distinct from the per-team
+  past-monster boards.
 
 ### Still OPEN (pending client) — not blocking
-- **Miniboss targeting flow**: coexist-and-pick-target vs pause-team-monsters. The engine
-  takes an explicit target id so nothing is blocked; the miniboss *lifecycle* is a marked
-  TODO (the `.spawnMiniboss` action + `MinibossSpawnAction` exist but are inert until this
-  is decided).
-- All-time hall-of-fame vs active-only (item 7 above).
-- Exact rounding confirmations, tie-handling beyond top-N, whether the teacher needs to
-  edit/backdate older entries, and whether lowering the kill-target below current damage
-  should auto-defeat (current behavior: does **not** auto-defeat; remainingHP clamps to 0).
+- All-time hall-of-fame vs active-only (decision 7 above).
+- Overkill × miniboss boundaries: does overkill on the trigger kill carry INTO the
+  miniboss? Does overkill on the miniboss carry to the triggering team's next monster?
+- Whether lowering the kill-target below current damage should auto-defeat (current
+  behavior: does **not** auto-defeat; remainingHP clamps to 0).
 
 ---
 
@@ -158,9 +174,35 @@ pure/injectable. Verified by adversarial review (compile + logic + test-assertio
 the **real green light is `swift test` on the Mac** (no Swift toolchain on the Windows dev
 box).
 
-### ⏸ CURRENT HOLD (2026-06-26)
-User is running `swift test` in `PianoCore/` on the Mac to confirm the foundation compiles
-and passes. **When it's green → build migration (step 7).** If failures, fix them first.
+### ⏸ CURRENT STATE (2026-06-26, after client answers)
+Client items 2 (tie ranking), 3 (most-recent-only entry editing), and 4 (overkill
+CARRYOVER — reversal of the earlier discard default) are **built with hard undo tests**
+(`CarryoverUndoTests`, `EntryEditingTests`, updated `GameEngineTests`/`LeaderboardsTests`).
+Item 5 (miniboss) is **paused at a written suspend/resume model proposal awaiting the
+user's review** — do not implement until approved. `swift test` on the Mac is still the
+compile/pass gate for everything (no Swift toolchain on the Windows dev box). Migration
+(step 7) remains queued behind the green light.
+
+### Proposed miniboss suspend/resume model (AWAITING REVIEW — key ideas)
+1. **No snapshot machinery.** Because all battle state (remaining HP, boards) is DERIVED
+   from the log, "pausing" a team requires storing nothing: while a miniboss is alive,
+   attacks simply may not target regular monsters (validation error), so paused monsters
+   cannot change. `state.aliveMiniboss != nil` IS the pause flag. Resume = the validation
+   lifts. Nothing to restore, nothing to corrupt.
+2. **Lineup as data**: `AppState.lineup: [templateID]` (ordered, regular + miniboss slots
+   interleaved) + a per-team progression pointer; replaces the current cyclic-next rule.
+   Successor spawns consume the lineup; teacher lineup edits are undoable actions and only
+   affect FUTURE spawns (paused/live monsters untouched) — which is exactly her
+   "catch-up during the pause" use case.
+3. **Trigger inside resolveDefeat**: when a team's next lineup slot is a miniboss, the
+   defeat spawns the GLOBAL miniboss (teamID nil, averages of ALL students frozen at
+   trigger, miniboss kill-target) as that kill's DefeatOutcome successor — so undoing the
+   trigger kill removes the miniboss via the existing machinery.
+4. **Resume on miniboss defeat**: the triggering team (the only one without an alive
+   monster) gets its next regular monster spawned from the (possibly edited) lineup as the
+   miniboss's DefeatOutcome successor; other teams just become attackable again.
+5. **Past-miniboss board**: derived — most-recently-defeated `kind == .miniboss` record's
+   frozen finalLeaderboard. Zero new storage.
 
 ---
 

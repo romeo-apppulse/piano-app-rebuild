@@ -5,10 +5,11 @@
 //  most recent action (scoped to a team in the UI) and reverses it. Crucially this
 //  is ONE stack: attacks, teacher HP adjustments, kill-target changes, autokill, and
 //  miniboss spawns all live here, so there is a single, consistent Undo — not two
-//  parallel mechanisms.
+//  parallel mechanisms. It also implements the client's entry policy: deletion is
+//  top-down only (newest backward), which is exactly LIFO undo.
 //
 //  Each action carries enough information to reverse itself (prior values / the full
-//  spawned successor) so undo never has to recompute or replay the whole history.
+//  spawned successors) so undo never has to recompute or replay the whole history.
 //
 
 import Foundation
@@ -36,16 +37,22 @@ public struct DefeatOutcome: Codable, Equatable {
     }
 }
 
-/// A logged attack. If it killed the monster, `causedDefeat` carries the kill+spawn
-/// so a single undo of this action reverses the hit, the kill, the spawn, and the
-/// leaderboard lock-in atomically.
+/// One logged attack, including everything it caused. With overkill CARRYOVER
+/// (client decision), a single attack can produce a chain: a capped killing entry on
+/// the dying monster, a kill+spawn, a carryover entry on the successor — possibly
+/// repeating if the leftover kills the successor too. All entries and defeats of the
+/// chain live on this one action, so a single undo reverses the entire chain
+/// atomically (entries removed, spawns removed, defeats reverted, lock-ins cleared).
 public struct AttackAction: Codable, Equatable {
-    public let entry: CombatLogEntry
-    public let causedDefeat: DefeatOutcome?
+    /// Every log entry this attack created, in creation order. The first entry is on
+    /// the originally targeted monster; later entries are carryover on successors.
+    public let entries: [CombatLogEntry]
+    /// Every defeat this attack caused, in order (empty for a plain hit).
+    public let defeats: [DefeatOutcome]
 
-    public init(entry: CombatLogEntry, causedDefeat: DefeatOutcome? = nil) {
-        self.entry = entry
-        self.causedDefeat = causedDefeat
+    public init(entries: [CombatLogEntry], defeats: [DefeatOutcome]) {
+        self.entries = entries
+        self.defeats = defeats
     }
 }
 
@@ -91,6 +98,7 @@ public struct AutokillAction: Codable, Equatable {
 }
 
 /// Teacher spawns a miniboss event. The full record is stored so undo can remove it.
+/// (Inert until the miniboss lifecycle is built — pending client-approved design.)
 public struct MinibossSpawnAction: Codable, Equatable {
     public let spawnedRecord: MonsterRecord
     public let at: Date
@@ -109,10 +117,11 @@ public enum GameAction: Codable, Equatable {
     case spawnMiniboss(MinibossSpawnAction)
 
     /// The monster instance this action concerns (used to resolve which team's
-    /// timeline it belongs to for team-scoped undo). nil only if not applicable.
+    /// timeline it belongs to for team-scoped undo). For an attack chain this is the
+    /// ORIGINALLY targeted monster; carryover successors share its team.
     public var monsterRecordID: UUID? {
         switch self {
-        case .attack(let a):        return a.entry.monsterRecordID
+        case .attack(let a):        return a.entries.first?.monsterRecordID
         case .adjustHP(let a):      return a.monsterRecordID
         case .setKillTarget(let a): return a.monsterRecordID
         case .autokill(let a):      return a.outcome.defeatedRecordID

@@ -6,8 +6,15 @@
 //    2. Past-monster    — the frozen top-3 snapshot of a team's previous monster.
 //    3. All-time        — cumulative damage per student since added (incl. seeds).
 //
-//  All ranking is DENSE (equal totals share a rank, no gaps), with a stable
-//  case-insensitive name tiebreak so ordering is deterministic.
+//  RANKING RULE (client decision, from her own example): tied students share the
+//  same placement, and the next distinct total gets the NEXT number — two students
+//  tied at 439 are both 1st, the next student is 2nd (not 3rd). Applied identically
+//  to all three boards. A stable name-then-id tiebreak keeps ordering deterministic.
+//
+//  NOTE: the client's verbal formula ("1 + number strictly ahead") would instead make
+//  the next student 3rd; her worked example overrides it. If she ever wants the
+//  1-1-3 style, change ONLY the rank increment in `ranked` (rank = position of the
+//  first row with this total, i.e. count of strictly-better students + 1).
 //
 
 import Foundation
@@ -28,8 +35,9 @@ public struct LeaderboardRow: Identifiable, Codable, Hashable {
 
 public enum Leaderboards {
 
-    /// Dense ranking over pre-summed totals. Equal totals share a rank; the next
-    /// distinct total gets the next rank (no gaps). Ties broken by name for stability.
+    /// Shared-placement ranking over pre-summed totals (see the header rule): equal
+    /// totals share a placement; the next distinct total gets the next number, no
+    /// gaps (1-1-2). Ties ordered by name then id for stability.
     public static func ranked(_ totals: [(id: UUID, name: String, total: Int)]) -> [LeaderboardRow] {
         let sorted = totals.sorted { a, b in
             if a.total != b.total { return a.total > b.total }
