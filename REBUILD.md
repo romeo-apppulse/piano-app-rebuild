@@ -165,8 +165,12 @@ defeated one; the leftover is discarded.
 3. ✅ **Leaderboards** — done, verified.
 4. ✅ **Spawn/defeat + backdoor controls** (+ miniboss HP; lifecycle deferred) — done, verified.
 5. ✅ **Undo** (incl. kill reversal, team-scoped) — done, verified.
-6. ⬜ **Congrats moment + settings views** — not started.
-7. ⬜ **Data migration** — NEXT once the foundation is green on the Mac.
+6. ⬜ **Congrats moment + settings views** — not started (UI phase; new app target on PianoCore).
+7. ✅ **Data migration** — `LegacyLoader` (tolerant per-element parsing of the legacy
+   files) + pure `Migration.migrate` (id reuse, name-join with collision/orphan
+   flagging, `legacyFixedHP` pinning, optional `.migration` seeding, drift check,
+   `MigrationReport`). Tests in `MigrationTests`. First-launch wiring lands with
+   GameStore in the app target.
 8. ⬜ **Full on-device iOS 16.7 test pass.**
 
 Plus: ✅ persistence layer (atomic JSON + backups) written + tested.
@@ -176,13 +180,17 @@ pure/injectable. Verified by adversarial review (compile + logic + test-assertio
 the **real green light is `swift test` on the Mac** (no Swift toolchain on the Windows dev
 box).
 
-### ⏸ CURRENT STATE (2026-06-26, all five client items built)
-Client items 2 (tie ranking), 3 (most-recent-only entry editing), 4 (overkill
-CARRYOVER), and 5 (miniboss flow, model approved) are **built with hard undo tests**
-(`CarryoverUndoTests`, `EntryEditingTests`, `MinibossFlowTests`, updated
-`GameEngineTests`/`LeaderboardsTests`). `swift test` on the Mac is still the compile/pass
-gate for everything (no Swift toolchain on the Windows dev box). Migration (step 7)
-remains queued behind the green light.
+### CURRENT STATE (2026-06-26)
+`swift test` **passed on the Mac** for the foundation + items 2–5. Migration (step 7) is
+now built too — the Mac `swift test` run is the gate for it (new `MigrationTests`).
+Remaining: GameStore + UI (step 6, in a NEW app target depending on PianoCore — see
+below), first-launch migration wiring, on-device pass.
+
+**UI phase decision (2026-06-26):** UI/UX work lands in a **fresh SwiftUI app target
+that depends on PianoCore**, on a feature branch — NOT in the legacy `PianoAppv2/`
+target, which stays untouched (it's Rebecca's live app and the migration data source;
+its views are welded to the legacy name-keyed classes and will be retired after
+migration is proven).
 
 ### Miniboss implementation (approved model, as built)
 1. **No snapshot machinery.** All battle state (remaining HP, boards) is DERIVED from the
