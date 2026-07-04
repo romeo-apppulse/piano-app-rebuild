@@ -67,8 +67,13 @@ final class GameStore: ObservableObject {
         commit { _ = GameEngine.spawnInitialMonster(into: &$0, teamID: teamID, templateID: templateID, at: date) }
     }
 
-    func attack(targetRecordID: UUID, studentID: UUID, amount: Int, at date: Date = Date()) {
-        commit { _ = GameEngine.attack(into: &$0, targetRecordID: targetRecordID, studentID: studentID, amount: amount, at: date) }
+    /// Returns the engine result so the UI can trigger the congrats moment on a kill and
+    /// surface rejections (e.g. `.minibossActive`). Persists only on success.
+    @discardableResult
+    func attack(targetRecordID: UUID, studentID: UUID, amount: Int, at date: Date = Date()) -> Result<AttackResult, EngineError> {
+        let outcome = GameEngine.attack(into: &state, targetRecordID: targetRecordID, studentID: studentID, amount: amount, at: date)
+        if case .success = outcome { persist() }
+        return outcome
     }
 
     func editMostRecentAttack(teamScope: UUID? = nil, newAmount: Int) {
@@ -212,6 +217,10 @@ final class GameStore: ObservableObject {
 
     private func commit(_ transform: (inout AppState) -> Void) {
         transform(&state)
+        persist()
+    }
+
+    private func persist() {
         do {
             try persistence.save(state)
             saveError = nil

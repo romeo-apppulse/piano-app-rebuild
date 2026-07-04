@@ -35,12 +35,15 @@ enum DebugFixtures {
     ]
     """
 
+    // NOTE: legacy `score` IS damage to the team's CURRENT (alive) monster, so a team's
+    // scores must sum to LESS than that monster's HP, and the battle's `dmg` aggregate
+    // should match the sum (otherwise migration flags drift). Kept realistic here.
     private static let studentsJSON = """
     [
-      { "name": "Ada",  "teamName": "Red Robins", "score": 120 },
-      { "name": "Ben",  "teamName": "Red Robins", "score": 80 },
-      { "name": "Cleo", "teamName": "Blue Jays",  "score": 200 },
-      { "name": "Dan",  "teamName": "Blue Jays",  "score": 0 }
+      { "name": "Ada",  "teamName": "Red Robins", "score": 20 },
+      { "name": "Ben",  "teamName": "Red Robins", "score": 15 },
+      { "name": "Cleo", "teamName": "Blue Jays",  "score": 45 },
+      { "name": "Dan",  "teamName": "Blue Jays",  "score": 10 }
     ]
     """
 
@@ -53,8 +56,8 @@ enum DebugFixtures {
 
     private static let battleDeckJSON = """
     [
-      { "monsterName": "Gremlin", "teamName": "Red Robins", "hp": 50, "dmg": 15 },
-      { "monsterName": "Dragon",  "teamName": "Blue Jays",  "hp": 80, "dmg": 30 }
+      { "monsterName": "Gremlin", "teamName": "Red Robins", "hp": 50, "dmg": 35 },
+      { "monsterName": "Dragon",  "teamName": "Blue Jays",  "hp": 80, "dmg": 55 }
     ]
     """
 }
