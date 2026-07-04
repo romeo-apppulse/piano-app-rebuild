@@ -93,11 +93,14 @@ The teacher admin has a **DEBUG-only** bar: **Seed legacy** writes fixture legac
 
 ## Remaining roadmap
 
-1. **XCUITest harness** for PianoApp — seed through PianoCore state (no production-data
-   paths); headline coverage is **attack → kill → congrats → undo** end-to-end.
+1. ✅ **XCUITest harness** — `PianoAppUITests/BattleFlowUITests` (4 tests, green on the
+   iPad Pro 13″): attack→HP/log, kill→congrats→spawn→undo, miniboss trigger→takeover→undo,
+   overkill carryover. Fixtures seed through PianoCore state (`-uiTestFixture`).
 2. **Image picker** for monster art (catalog references images by filename today).
 3. **On-device migration rehearsal** with a copy of Rebecca's real data — the
-   highest-ceremony step; treat carefully before any ship talk.
+   highest-ceremony step. **The full runbook is `docs/MIGRATION-REHEARSAL.md`** (capture →
+   gated dry-run test `RealDataRehearsalTests` → client review → device rehearsal → ship
+   day with bundle-id flip and rollback layers). Follow it exactly.
 
 **Ship note (locked):** for migration to see the legacy files in production, PianoApp must
 ultimately ship under the legacy bundle id **`Becca.PianoAppv2`** (same sandbox). During dev
