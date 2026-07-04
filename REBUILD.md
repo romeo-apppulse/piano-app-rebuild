@@ -166,7 +166,18 @@ defeated one; the leftover is discarded.
 3. ✅ **Leaderboards** — done, verified.
 4. ✅ **Spawn/defeat + backdoor controls** (+ miniboss HP; lifecycle deferred) — done, verified.
 5. ✅ **Undo** (incl. kill reversal, team-scoped) — done, verified.
-6. ⬜ **Congrats moment + settings views** — not started (UI phase; new app target on PianoCore).
+6. ✅ **UI phase** — PianoApp target on PianoCore: GameStore (typed engine bridge,
+   atomic persist, first-launch migration), teacher admin (NavigationSplitView: roster/
+   teams/catalog/lineup/averages/backdoor/backup), immersive battle view (attack flow,
+   HP bar, boards incl. past-miniboss slot, combat log, undo, congrats overlay,
+   miniboss takeover). Reviewed by the Windows session; fixes applied.
+   **XCUITest harness authored** (`PianoApp/Testing/UITestSupport.swift` fixtures +
+   `PianoAppUITests/BattleFlowUITests.swift`): attack→HP/log, kill→congrats→spawn→undo,
+   miniboss trigger→takeover→undo, overkill carryover — all seeded through PianoCore
+   state in a temp sandbox via `-uiTestFixture`; no production-data paths.
+   ⚠️ Mac must create the "PianoAppUITests" UI Testing Bundle target in Xcode (target
+   under test = PianoApp), attach BattleFlowUITests.swift, and run. Remaining UI: image
+   picker for monster art.
 7. ✅ **Data migration** — `LegacyLoader` (tolerant per-element parsing of the legacy
    files) + pure `Migration.migrate` (id reuse, name-join with collision/orphan
    flagging, `legacyFixedHP` pinning, optional `.migration` seeding, drift check,

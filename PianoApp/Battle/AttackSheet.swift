@@ -58,7 +58,10 @@ struct AttackSheet: View {
                         .frame(maxWidth: .infinity, minHeight: 72)
                         .buttonStyle(.borderedProminent)
                         .tint(.orange)
-                        .disabled(Int(input) == nil)
+                        // > 0, not just non-nil: a 0-damage entry is meaningless log
+                        // noise one fat-finger away.
+                        .disabled((Int(input) ?? 0) <= 0)
+                        .accessibilityIdentifier("attack.confirm")
                 }
             }
             Spacer()

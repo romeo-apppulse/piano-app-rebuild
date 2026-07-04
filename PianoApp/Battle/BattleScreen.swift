@@ -84,6 +84,7 @@ struct BattleScreen: View {
             Text(template(record)?.name ?? "Monster")
                 .font(.system(size: 56, weight: .heavy, design: .rounded))
                 .lineLimit(1).minimumScaleFactor(0.5)
+                .accessibilityIdentifier("battle.monsterName")
             if let artist = template(record)?.artist, !artist.isEmpty {
                 Text(artist).font(.title3).foregroundStyle(.secondary)
             }
@@ -98,12 +99,14 @@ struct BattleScreen: View {
             }
             .buttonStyle(.borderedProminent).tint(.orange)
             .disabled(celebrating || attackers.isEmpty)
+            .accessibilityIdentifier("battle.logPractice")
 
             HStack {
                 Button { _ = store.undoLast(teamScope: undoScope) } label: {
                     Label("Undo", systemImage: "arrow.uturn.backward").font(.title3)
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("battle.undo")
                 Spacer()
                 Button { showAllTime = true } label: {
                     Label("All-Time", systemImage: "trophy.fill").font(.title3)
@@ -141,6 +144,7 @@ struct BattleScreen: View {
             }
             .frame(height: 30)
             Text("\(remaining) / \(effective) HP").font(.title3.bold().monospacedDigit())
+                .accessibilityIdentifier("battle.hp")
         }
     }
 
@@ -151,19 +155,15 @@ struct BattleScreen: View {
             VStack(alignment: .leading, spacing: 20) {
                 boardSection("Leaderboard", rows: Leaderboards.currentMonster(recordID: record.id, state: store.state))
 
-                let past = pastBoard
-                if !past.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Last Monster").font(.title2.bold())
-                        ForEach(past) { row in
-                            HStack {
-                                Text("\(row.rank).").monospacedDigit().foregroundStyle(.secondary)
-                                Text(row.displayName)
-                                Spacer()
-                                Text("\(row.totalDamage)").bold().monospacedDigit()
-                            }.font(.title3)
-                        }
-                    }
+                if !pastBoard.isEmpty {
+                    snapshotBoard("Last Monster", rows: pastBoard)
+                }
+
+                // The defeated miniboss keeps its OWN past slot (client requirement),
+                // distinct from the per-team past-monster board above.
+                let pastMiniboss = Leaderboards.pastMiniboss(state: store.state)
+                if !pastMiniboss.isEmpty {
+                    snapshotBoard("Last Miniboss", rows: pastMiniboss)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -189,6 +189,20 @@ struct BattleScreen: View {
             ForEach(rows) { row in
                 HStack {
                     Text(medal(row.rank)).monospacedDigit().frame(width: 44, alignment: .leading)
+                    Text(row.displayName)
+                    Spacer()
+                    Text("\(row.totalDamage)").bold().monospacedDigit()
+                }.font(.title3)
+            }
+        }
+    }
+
+    private func snapshotBoard(_ title: String, rows: [LeaderboardSnapshotRow]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.title2.bold())
+            ForEach(rows) { row in
+                HStack {
+                    Text("\(row.rank).").monospacedDigit().foregroundStyle(.secondary)
                     Text(row.displayName)
                     Spacer()
                     Text("\(row.totalDamage)").bold().monospacedDigit()
@@ -228,6 +242,7 @@ struct BattleScreen: View {
                     .padding(10)
                     .frame(maxWidth: .infinity)
                     .background(Color.orange)
+                    .accessibilityIdentifier("battle.minibossBanner")
             }
         }
     }
@@ -238,6 +253,7 @@ struct BattleScreen: View {
         }
         .tint(.secondary)
         .padding()
+        .accessibilityIdentifier("battle.admin")
     }
 
     private var rejectionBanner: some View {
