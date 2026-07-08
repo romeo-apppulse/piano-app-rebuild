@@ -160,6 +160,30 @@ struct BackdoorView: View {
         }
     }
 
+    // MARK: - No live monster → spawn
+
+    private var spawnControls: some View {
+        Section("No active monster") {
+            Text("This team has no monster in play. Spawn one to begin.")
+                .font(.footnote).foregroundStyle(.secondary)
+            Picker("Monster", selection: $spawnTemplateID) {
+                Text("Choose…").tag(UUID?.none)
+                ForEach(store.state.monsterCatalog.filter { $0.kind == .regular }) {
+                    Text($0.name).tag(UUID?.some($0.id))
+                }
+            }
+            Button {
+                if let team = teamID, let template = spawnTemplateID {
+                    store.spawnInitialMonster(teamID: team, templateID: template)
+                    spawnTemplateID = nil
+                }
+            } label: {
+                Label("Start Battle", systemImage: "play.fill").font(.title3.bold())
+            }
+            .disabled(spawnTemplateID == nil)
+        }
+    }
+
     private func templateName(_ id: UUID) -> String {
         store.state.monsterCatalog.first { $0.id == id }?.name ?? "Unknown"
     }
