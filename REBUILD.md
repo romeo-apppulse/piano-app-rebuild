@@ -192,6 +192,15 @@ pure/injectable. Verified by adversarial review (compile + logic + test-assertio
 the **real green light is `swift test` on the Mac** (no Swift toolchain on the Windows dev
 box).
 
+### 🏁 FEATURE-COMPLETE (2026-07-09, `aec04a2`)
+Every client-requested feature and fix is implemented and gate-verified against origin:
+xcodebuild ✅ · PianoCore 64 ✅ · PianoAppTests 5/5 ✅ · XCUITests 4/4 ✅.
+Remaining before ship: (1) five quick visual tap-throughs next iPad-in-hand session
+(all-time markers, fix-last-entry, miniboss admin section, settings persistence,
+picker cancel); (2) the migration rehearsal (docs/MIGRATION-REHEARSAL.md, Phases 1–5);
+(3) client sign-offs: seeding on/off + hall-of-fame vs active-only; (4) ship-day
+bundle-id flip (decision #10).
+
 ### Spec-compliance audit (2026-07-09) — four gaps found, ALL FIXED
 Full audit of the built system against every client ask. Everything else verified
 present; these were missing and are now implemented:
