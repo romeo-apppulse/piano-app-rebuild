@@ -17,6 +17,10 @@ struct MonsterImagePicker: UIViewControllerRepresentable {
     let directory: URL
     /// Filename on success, or a `MonsterImageStore.StoreError` on failure. Not called on cancel.
     let onResult: (Result<String, Error>) -> Void
+    /// Called on Cancel. The document picker dismisses ITSELF (UIKit-initiated), which does not
+    /// reset a `.sheet(item:)` binding — so without this, re-tapping the SAME row can't re-present
+    /// the picker (unchanged item identity → no re-presentation). The caller clears its binding here.
+    let onCancel: () -> Void
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.image], asCopy: true)
@@ -37,6 +41,9 @@ struct MonsterImagePicker: UIViewControllerRepresentable {
             guard let url = urls.first else { return }
             parent.onResult(Result { try MonsterImageStore.store(pickedFileAt: url, into: parent.directory) })
         }
-        // documentPickerWasCancelled → intentionally no callback (leave state untouched).
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            parent.onCancel()
+        }
     }
 }

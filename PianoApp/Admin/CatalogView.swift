@@ -111,9 +111,9 @@ struct CatalogView: View {
         }
         .navigationTitle("Monster Catalog")
         .sheet(item: $pickTarget) { target in
-            MonsterImagePicker(directory: store.imageDirectory) { result in
-                handle(result, for: target)
-            }
+            MonsterImagePicker(directory: store.imageDirectory,
+                               onResult: { handle($0, for: target) },
+                               onCancel: { pickTarget = nil })
         }
         .alert("Image problem", isPresented: Binding(get: { errorMessage != nil },
                                                      set: { if !$0 { errorMessage = nil } })) {
