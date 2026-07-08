@@ -2,15 +2,16 @@
 //  MonsterArt.swift
 //  PianoApp
 //
-//  Loads a monster template's image from Documents by filename. Falls back to a bold
-//  placeholder when the art is missing (the real image picker lands in a later pass;
-//  migrated templates reference filenames whose bytes may not exist yet).
+//  Renders a monster template's art with a bounded (memory-flat) decode, falling back to a
+//  bold placeholder when the art is missing — migrated templates reference filenames whose
+//  bytes may not exist until the teacher assigns art in the catalog.
 //
 
 import SwiftUI
 import PianoCore
 
 struct MonsterArt: View {
+    @EnvironmentObject private var store: GameStore
     let template: MonsterTemplate?
 
     var body: some View {
@@ -36,10 +37,11 @@ struct MonsterArt: View {
         }
     }
 
+    /// Bounded thumbnail decode from the STORE's directory (not the static `documentsDirectory`,
+    /// which would miss art under a seeded/UITest fixture dir). 1600 px caps display memory: the
+    /// art renders at ~360 pt (~720 px @2×), so this is already >2× what the screen needs.
     private var loadedImage: UIImage? {
         guard let name = template?.imageFileName, !name.isEmpty else { return nil }
-        let url = GameStore.documentsDirectory.appendingPathComponent(name)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return UIImage(data: data)
+        return MonsterImageStore.thumbnail(filename: name, in: store.imageDirectory, maxPixel: 1600)
     }
 }

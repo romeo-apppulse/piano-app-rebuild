@@ -32,6 +32,16 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A1A1A1A1A1A1A1A1A1A10030"
+               BuildableName = "PianoAppTests.xctest"
+               BlueprintName = "PianoAppTests"
+               ReferencedContainer = "container:PianoApp.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "A1A1A1A1A1A1A1A1A1A10020"
                BuildableName = "PianoAppUITests.xctest"
                BlueprintName = "PianoAppUITests"

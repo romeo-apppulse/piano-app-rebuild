@@ -8,10 +8,18 @@
 
 /* Begin PBXBuildFile section */
 		A1A1A1A1A1A1A1A1A1A10012 /* PianoCore in Frameworks */ = {isa = PBXBuildFile; productRef = A1A1A1A1A1A1A1A1A1A10011 /* PianoCore */; };
+		A1A1A1A1A1A1A1A1A1A1003C /* PianoCore in Frameworks */ = {isa = PBXBuildFile; productRef = A1A1A1A1A1A1A1A1A1A1003B /* PianoCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		A1A1A1A1A1A1A1A1A1A10029 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1A1A1A1A1A1A1A1A1A10001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1A1A1A1A1A1A1A1A1A10004;
+			remoteInfo = PianoApp;
+		};
+		A1A1A1A1A1A1A1A1A1A1003A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A1A1A1A1A1A1A1A1A1A10001 /* Project object */;
 			proxyType = 1;
@@ -23,6 +31,7 @@
 /* Begin PBXFileReference section */
 		A1A1A1A1A1A1A1A1A1A10005 /* PianoApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PianoApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1A1A1A1A1A1A1A1A1A10021 /* PianoAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PianoAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1A1A1A1A1A1A1A1A1A10031 /* PianoAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PianoAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,6 +43,11 @@
 		A1A1A1A1A1A1A1A1A1A10022 /* PianoAppUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = PianoAppUITests;
+			sourceTree = "<group>";
+		};
+		A1A1A1A1A1A1A1A1A1A10032 /* PianoAppTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PianoAppTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -54,6 +68,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1A1A1A1A1A1A1A1A1A10034 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1A1A1A1A1A1A1A1A1A1003C /* PianoCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -61,6 +83,7 @@
 			isa = PBXGroup;
 			children = (
 				A1A1A1A1A1A1A1A1A1A10006 /* PianoApp */,
+				A1A1A1A1A1A1A1A1A1A10032 /* PianoAppTests */,
 				A1A1A1A1A1A1A1A1A1A10022 /* PianoAppUITests */,
 				A1A1A1A1A1A1A1A1A1A10003 /* Products */,
 			);
@@ -71,6 +94,7 @@
 			children = (
 				A1A1A1A1A1A1A1A1A1A10005 /* PianoApp.app */,
 				A1A1A1A1A1A1A1A1A1A10021 /* PianoAppUITests.xctest */,
+				A1A1A1A1A1A1A1A1A1A10031 /* PianoAppTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -124,6 +148,30 @@
 			productReference = A1A1A1A1A1A1A1A1A1A10021 /* PianoAppUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		A1A1A1A1A1A1A1A1A1A10030 /* PianoAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1A1A1A1A1A1A1A1A1A10036 /* Build configuration list for PBXNativeTarget "PianoAppTests" */;
+			buildPhases = (
+				A1A1A1A1A1A1A1A1A1A10033 /* Sources */,
+				A1A1A1A1A1A1A1A1A1A10034 /* Frameworks */,
+				A1A1A1A1A1A1A1A1A1A10035 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A1A1A1A1A1A1A1A1A1A10039 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A1A1A1A1A1A1A1A1A1A10032 /* PianoAppTests */,
+			);
+			name = PianoAppTests;
+			packageProductDependencies = (
+				A1A1A1A1A1A1A1A1A1A1003B /* PianoCore */,
+			);
+			productName = PianoAppTests;
+			productReference = A1A1A1A1A1A1A1A1A1A10031 /* PianoAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -138,6 +186,10 @@
 						CreatedOnToolsVersion = 16.2;
 					};
 					A1A1A1A1A1A1A1A1A1A10020 = {
+						CreatedOnToolsVersion = 16.2;
+						TestTargetID = A1A1A1A1A1A1A1A1A1A10004;
+					};
+					A1A1A1A1A1A1A1A1A1A10030 = {
 						CreatedOnToolsVersion = 16.2;
 						TestTargetID = A1A1A1A1A1A1A1A1A1A10004;
 					};
@@ -162,6 +214,7 @@
 			targets = (
 				A1A1A1A1A1A1A1A1A1A10004 /* PianoApp */,
 				A1A1A1A1A1A1A1A1A1A10020 /* PianoAppUITests */,
+				A1A1A1A1A1A1A1A1A1A10030 /* PianoAppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -175,6 +228,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A1A1A1A1A1A1A1A1A1A10025 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1A1A1A1A1A1A1A1A1A10035 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -198,6 +258,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1A1A1A1A1A1A1A1A1A10033 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -205,6 +272,11 @@
 			isa = PBXTargetDependency;
 			target = A1A1A1A1A1A1A1A1A1A10004 /* PianoApp */;
 			targetProxy = A1A1A1A1A1A1A1A1A1A10029 /* PBXContainerItemProxy */;
+		};
+		A1A1A1A1A1A1A1A1A1A10039 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1A1A1A1A1A1A1A1A1A10004 /* PianoApp */;
+			targetProxy = A1A1A1A1A1A1A1A1A1A1003A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -382,6 +454,44 @@
 			};
 			name = Release;
 		};
+		A1A1A1A1A1A1A1A1A1A10037 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 52PR572G2C;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Becca.PianoAppTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PianoApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PianoApp";
+			};
+			name = Debug;
+		};
+		A1A1A1A1A1A1A1A1A1A10038 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 52PR572G2C;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Becca.PianoAppTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PianoApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PianoApp";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -412,6 +522,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		A1A1A1A1A1A1A1A1A1A10036 /* Build configuration list for PBXNativeTarget "PianoAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1A1A1A1A1A1A1A1A1A10037 /* Debug */,
+				A1A1A1A1A1A1A1A1A1A10038 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -423,6 +542,10 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		A1A1A1A1A1A1A1A1A1A10011 /* PianoCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PianoCore;
+		};
+		A1A1A1A1A1A1A1A1A1A1003B /* PianoCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PianoCore;
 		};

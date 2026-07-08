@@ -26,6 +26,12 @@ final class GameStore: ObservableObject {
 
     private let persistence: JSONFilePersistence
 
+    /// The directory monster-art image files live in — the SAME directory this store was
+    /// initialized with (Documents in production, a temp dir under UITest/seed fixtures).
+    /// Reads (`MonsterArt`) and writes (the picker) must both use THIS, not the static
+    /// `documentsDirectory`, or seeded builds would look for art in the wrong sandbox.
+    let imageDirectory: URL
+
     /// First-launch flow (the caller passes the app's Documents dir in production):
     ///   1. If `appState.json` exists → load it.
     ///   2. Else if the old app's legacy files are present → migrate + save + report.
@@ -33,6 +39,7 @@ final class GameStore: ObservableObject {
     init(directory: URL = GameStore.documentsDirectory) {
         let persistence = JSONFilePersistence(directory: directory)
         self.persistence = persistence
+        self.imageDirectory = directory
 
         if persistence.exists() {
             do {
@@ -160,6 +167,14 @@ final class GameStore: ObservableObject {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         apply { if let i = $0.monsterCatalog.firstIndex(where: { $0.id == id }) { $0.monsterCatalog[i].name = trimmed } }
+    }
+
+    /// Point a template at (freshly stored) art, or clear it. `fileName` is a bare name in
+    /// `imageDirectory`, produced by `MonsterImageStore.store`. Catalog CRUD → `apply` is the
+    /// correct channel (not the engine). We never touch image *bytes* here: on replace the
+    /// previous file is intentionally left on disk (a `.bak` restore may still reference it).
+    func setTemplateImage(_ id: UUID, fileName: String?) {
+        apply { if let i = $0.monsterCatalog.firstIndex(where: { $0.id == id }) { $0.monsterCatalog[i].imageFileName = fileName } }
     }
 
     func removeTemplate(_ id: UUID) {
