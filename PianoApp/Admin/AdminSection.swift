@@ -15,6 +15,7 @@ enum AdminSection: String, CaseIterable, Identifiable, Hashable {
     case lineup
     case averages
     case backdoor
+    case settings
     case backup
 
     var id: String { rawValue }
@@ -27,6 +28,7 @@ enum AdminSection: String, CaseIterable, Identifiable, Hashable {
         case .lineup:   return "Lineup"
         case .averages: return "Daily Averages"
         case .backdoor: return "Backdoor Controls"
+        case .settings: return "Game Settings"
         case .backup:   return "Backup & Restore"
         }
     }
@@ -39,6 +41,7 @@ enum AdminSection: String, CaseIterable, Identifiable, Hashable {
         case .lineup:   return "list.number"
         case .averages: return "chart.bar.fill"
         case .backdoor: return "slider.horizontal.3"
+        case .settings: return "gearshape.2.fill"
         case .backup:   return "externaldrive.fill"
         }
     }

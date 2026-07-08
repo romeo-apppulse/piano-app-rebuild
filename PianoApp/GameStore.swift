@@ -87,6 +87,12 @@ final class GameStore: ObservableObject {
         commit { _ = GameEngine.editMostRecentAttack(into: &$0, teamScope: teamScope, newAmount: newAmount) }
     }
 
+    /// The only editable/deletable thing in scope (most-recent-only policy), or nil.
+    /// Drives the admin "fix the last entry" affordance; same scope logic as undo.
+    func mostRecentAttack(teamScope: UUID? = nil) -> AttackAction? {
+        GameEngine.mostRecentAttack(in: state, teamScope: teamScope)
+    }
+
     func deleteMostRecentEntry(teamScope: UUID? = nil) {
         commit { _ = GameEngine.deleteMostRecentEntry(into: &$0, teamScope: teamScope) }
     }
@@ -112,6 +118,16 @@ final class GameStore: ObservableObject {
         var undone = false
         commit { undone = GameEngine.undoLast(into: &$0, teamScope: teamScope) }
         return undone
+    }
+
+    // MARK: - Game settings (config, not gameplay — engine-neutral by design)
+
+    /// Edits the persisted GameSettings (default kill targets, min HP, seeding flag).
+    /// NOTE: alive monsters are NOT touched — each MonsterRecord froze its own
+    /// killTargetWeeks at spawn; these defaults apply to FUTURE spawns/triggers only.
+    /// (Per-monster changes go through setKillTarget, which is undoable.)
+    func updateSettings(_ transform: (inout GameSettings) -> Void) {
+        commit { transform(&$0.settings) }
     }
 
     // MARK: - Roster / Team / Catalog CRUD (the ONLY callers of `apply`)

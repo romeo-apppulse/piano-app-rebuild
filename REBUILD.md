@@ -192,6 +192,27 @@ pure/injectable. Verified by adversarial review (compile + logic + test-assertio
 the **real green light is `swift test` on the Mac** (no Swift toolchain on the Windows dev
 box).
 
+### Spec-compliance audit (2026-07-09) — four gaps found, ALL FIXED
+Full audit of the built system against every client ask. Everything else verified
+present; these were missing and are now implemented:
+1. **All-time top-5 distinction** — board now gives 1st–5th placement markers (🥇🥈🥉/4th/5th);
+   ranks 6+ listed plainly with no marker (spec: "without distinction").
+2. **Edit-most-recent-entry UI** — "Fix the last entry" section in Backdoor Controls
+   (per-team; global during a miniboss): shows the entry, edit amount (engine
+   undo+re-apply), delete (same op as Undo, confirm-gated). Backed by a new engine
+   query `GameEngine.mostRecentAttack(in:teamScope:)` so the UI can never disagree
+   with what undo/edit will touch. **Engine guard added:** editing a paused team's
+   entry mid-miniboss refuses (`minibossActive`) instead of silently deleting (the
+   re-apply would have hit the pause gate after the undo); editing the trigger
+   attack itself remains legal. Tested.
+3. **Miniboss admin reachability** — Backdoor Controls now shows an Active Miniboss
+   section (stats, HP ±, kill-target, "End miniboss early" = autokill, confirm-gated);
+   previously an alive miniboss was unreachable (team-picker-only UI). Paused team
+   monsters remain HP/kill-target-editable with an explanatory note.
+4. **Game Settings admin section** — defaults for regular/miniboss kill-targets
+   (spec: "configurable"), minimum monster HP, and the migration seeding flag.
+   Defaults apply to future spawns only (alive monsters froze theirs at spawn).
+
 ### CURRENT STATE (2026-06-26)
 `swift test` **passed on the Mac** for the foundation + items 2–5. Migration (step 7) is
 now built too — the Mac `swift test` run is the gate for it (new `MigrationTests`).

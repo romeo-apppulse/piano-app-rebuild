@@ -161,6 +161,17 @@ public enum GameEngine {
 
     // MARK: - Most-recent-entry policy (edit / delete)
 
+    /// The most recent ATTACK action in scope — i.e. the only thing editable/deletable
+    /// under the client's most-recent-only policy — or nil if the last action in scope
+    /// is an admin action or nothing exists. Uses the SAME scope resolution as undo,
+    /// so a UI affordance driven by this can never disagree with what edit/delete/undo
+    /// will actually touch.
+    public static func mostRecentAttack(in state: AppState, teamScope: UUID? = nil) -> AttackAction? {
+        guard let i = lastActionIndex(forTeam: teamScope, state: state),
+              case .attack(let a) = state.actions[i] else { return nil }
+        return a
+    }
+
     /// Edits the amount of the MOST RECENT attack in scope (the only editable entry
     /// under the client's lock-older-entries policy). Implemented as undo + re-apply
     /// against the original target at the original timestamp, so any kill/carryover
@@ -174,6 +185,16 @@ public enum GameEngine {
         guard let i = lastActionIndex(forTeam: teamScope, state: state),
               case .attack(let a) = state.actions[i],
               let original = a.entries.first else { return .failure(.noEditableEntry) }
+
+        // Edit is undo + re-apply. If a miniboss is active, re-applying against a paused
+        // regular monster would hit the pause gate AFTER the undo already ran — silently
+        // turning "edit" into "delete". Refuse up front. Exception: editing the attack
+        // that TRIGGERED the miniboss is legal, because its own undo removes the miniboss
+        // (and the re-apply may then re-trigger it) — detect that via its defeats.
+        if let miniboss = state.aliveMiniboss, original.monsterRecordID != miniboss.id {
+            let thisAttackTriggeredIt = a.defeats.contains { $0.spawnedRecord?.id == miniboss.id }
+            guard thisAttackTriggeredIt else { return .failure(.minibossActive) }
+        }
 
         _ = undoLast(into: &state, teamScope: teamScope)
         return attack(into: &state,

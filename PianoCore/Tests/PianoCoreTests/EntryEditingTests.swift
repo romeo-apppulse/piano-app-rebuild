@@ -101,6 +101,23 @@ final class EntryEditingTests: XCTestCase {
         XCTAssertEqual(state.actions.count, 2)
     }
 
+    /// The UI's "can edit?" query must track exactly what edit/delete/undo will touch.
+    func testMostRecentAttackQueryMatchesEditability() {
+        var (state, team, stu, monster) = makeState(hp: 10)
+        XCTAssertNil(GameEngine.mostRecentAttack(in: state, teamScope: team)) // nothing yet
+
+        _ = try! GameEngine.attack(into: &state, targetRecordID: monster, studentID: stu, amount: 4, at: t(100)).get()
+        let found = GameEngine.mostRecentAttack(in: state, teamScope: team)
+        XCTAssertEqual(found?.entries.first?.amount, 4)
+
+        // An admin action on top hides the attack from the most-recent-only policy…
+        _ = try! GameEngine.adjustHP(into: &state, recordID: monster, delta: -1, at: t(200)).get()
+        XCTAssertNil(GameEngine.mostRecentAttack(in: state, teamScope: team))
+        // …and undoing it exposes the attack again.
+        XCTAssertTrue(GameEngine.undoLast(into: &state, teamScope: team))
+        XCTAssertEqual(GameEngine.mostRecentAttack(in: state, teamScope: team)?.entries.first?.amount, 4)
+    }
+
     func testEditRefusedWhenNothingToEdit() {
         var (state, team, _, _) = makeState(hp: 10)
         if case .failure(let e) = GameEngine.editMostRecentAttack(into: &state, teamScope: team, newAmount: 5) {

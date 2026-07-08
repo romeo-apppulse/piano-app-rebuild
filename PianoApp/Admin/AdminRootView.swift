@@ -44,6 +44,7 @@ struct AdminRootView: View {
         case .lineup:   LineupView()
         case .averages: AveragesView()
         case .backdoor: BackdoorView()
+        case .settings: GameSettingsView()
         case .backup:   BackupView()
         }
     }

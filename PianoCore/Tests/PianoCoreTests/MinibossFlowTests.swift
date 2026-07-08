@@ -228,6 +228,34 @@ final class MinibossFlowTests: XCTestCase {
         XCTAssertEqual(resumed.lineupSlotID, newSlot.id)
     }
 
+    /// Editing a PAUSED team's older attack during a miniboss must refuse cleanly (the
+    /// re-apply would hit the pause gate after the undo — edit would become delete),
+    /// while editing the TRIGGER attack itself stays legal (its undo removes the miniboss).
+    func testEditDuringMinibossRefusesPausedTargetsButAllowsTheTrigger() {
+        var f = makeFixture()
+        // Team B logs a normal hit first, then team A triggers the miniboss.
+        _ = try! GameEngine.attack(into: &f.state, targetRecordID: f.mB, studentID: f.sB, amount: 7, at: t(50)).get()
+        _ = try! GameEngine.attack(into: &f.state, targetRecordID: f.mA, studentID: f.sA, amount: 10, at: t(100)).get()
+        let succ = f.state.aliveRegularRecord(forTeam: f.teamA)!
+        _ = try! GameEngine.attack(into: &f.state, targetRecordID: succ.id, studentID: f.sA, amount: 5, at: t(200)).get()
+        XCTAssertNotNil(f.state.aliveMiniboss)
+
+        // Team B's last attack is on a paused monster → edit must refuse, state untouched.
+        let before = f.state
+        if case .failure(let e) = GameEngine.editMostRecentAttack(into: &f.state, teamScope: f.teamB, newAmount: 9) {
+            XCTAssertEqual(e, .minibossActive)
+        } else { XCTFail("editing a paused team's entry mid-miniboss must refuse") }
+        XCTAssertEqual(f.state, before)
+
+        // Editing the TRIGGER attack (team A's most recent) is legal: un-triggers, then
+        // re-applies — 5 was an exact kill, so a new amount of 2 leaves no kill/trigger.
+        let edited = try! GameEngine.editMostRecentAttack(into: &f.state, teamScope: f.teamA, newAmount: 2).get()
+        XCTAssertFalse(edited.killed)
+        XCTAssertNil(f.state.aliveMiniboss)                       // trigger reversed
+        XCTAssertEqual(f.state.remainingHP(of: f.state.aliveRegularRecord(forTeam: f.teamA)!), 3) // 5-HP succ, 2 dealt
+        XCTAssertEqual(f.state.damageDealt(toMonster: f.mB), 7)   // team B untouched throughout
+    }
+
     func testSetLineupValidatesAndUndoes() {
         var f = makeFixture()
         // Unknown template rejected.
