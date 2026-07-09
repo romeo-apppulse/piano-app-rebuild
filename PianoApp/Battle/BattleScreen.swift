@@ -13,6 +13,7 @@ import PianoCore
 
 struct BattleScreen: View {
     @EnvironmentObject private var store: GameStore
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     @Binding var showAdmin: Bool
 
     @State private var selectedTeamID: UUID?
@@ -52,11 +53,7 @@ struct BattleScreen: View {
     var body: some View {
         ZStack {
             if let target {
-                HStack(alignment: .top, spacing: 24) {
-                    battleColumn(target).frame(maxWidth: .infinity)
-                    boardsColumn(target).frame(width: 400)
-                }
-                .padding(28)
+                battleLayout(target)
             } else {
                 emptyState
             }
@@ -73,6 +70,29 @@ struct BattleScreen: View {
             }
         }
         .sheet(isPresented: $showAllTime) { AllTimeBoardView() }
+    }
+
+    /// Two columns side-by-side where there's room (iPad, landscape). On a compact
+    /// width (iPhone portrait) the fixed 400pt boards column would shove the battle
+    /// column off the left edge — Undo ends up off-screen — so stack the boards
+    /// beneath the battle column inside a single scroll view instead.
+    @ViewBuilder
+    private func battleLayout(_ target: MonsterRecord) -> some View {
+        if hSizeClass == .compact {
+            ScrollView {
+                VStack(spacing: 24) {
+                    battleColumn(target)
+                    boardsContent(target)
+                }
+                .padding(28)
+            }
+        } else {
+            HStack(alignment: .top, spacing: 24) {
+                battleColumn(target).frame(maxWidth: .infinity)
+                boardsColumn(target).frame(width: 400)
+            }
+            .padding(28)
+        }
     }
 
     // MARK: - Battle column
@@ -151,35 +171,40 @@ struct BattleScreen: View {
     // MARK: - Boards column
 
     private func boardsColumn(_ record: MonsterRecord) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                boardSection("Leaderboard", rows: Leaderboards.currentMonster(recordID: record.id, state: store.state))
+        ScrollView { boardsContent(record) }
+    }
 
-                if !pastBoard.isEmpty {
-                    snapshotBoard("Last Monster", rows: pastBoard)
+    /// The boards' inner content, WITHOUT a scroll view of its own, so it can sit
+    /// either in the side column's scroll view (regular width) or in the compact
+    /// layout's outer scroll view (iPhone) — never nested.
+    private func boardsContent(_ record: MonsterRecord) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            boardSection("Leaderboard", rows: Leaderboards.currentMonster(recordID: record.id, state: store.state))
+
+            if !pastBoard.isEmpty {
+                snapshotBoard("Last Monster", rows: pastBoard)
+            }
+
+            // The defeated miniboss keeps its OWN past slot (client requirement),
+            // distinct from the per-team past-monster board above.
+            let pastMiniboss = Leaderboards.pastMiniboss(state: store.state)
+            if !pastMiniboss.isEmpty {
+                snapshotBoard("Last Miniboss", rows: pastMiniboss)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Recent").font(.title2.bold())
+                let entries = recentLog(record)
+                if entries.isEmpty {
+                    Text("No hits yet.").foregroundStyle(.secondary)
                 }
-
-                // The defeated miniboss keeps its OWN past slot (client requirement),
-                // distinct from the per-team past-monster board above.
-                let pastMiniboss = Leaderboards.pastMiniboss(state: store.state)
-                if !pastMiniboss.isEmpty {
-                    snapshotBoard("Last Miniboss", rows: pastMiniboss)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Recent").font(.title2.bold())
-                    let entries = recentLog(record)
-                    if entries.isEmpty {
-                        Text("No hits yet.").foregroundStyle(.secondary)
-                    }
-                    ForEach(entries.prefix(10)) { entry in
-                        Text("\(store.state.displayName(entry.studentID)) does \(entry.amount) dmg to the monster!")
-                            .font(.headline)
-                    }
+                ForEach(entries.prefix(10)) { entry in
+                    Text("\(store.state.displayName(entry.studentID)) does \(entry.amount) dmg to the monster!")
+                        .font(.headline)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func boardSection(_ title: String, rows: [LeaderboardRow]) -> some View {

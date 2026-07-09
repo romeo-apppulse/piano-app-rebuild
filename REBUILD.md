@@ -183,7 +183,12 @@ defeated one; the leftover is discarded.
    flagging, `legacyFixedHP` pinning, optional `.migration` seeding, drift check,
    `MigrationReport`). Tests in `MigrationTests`. First-launch wiring lands with
    GameStore in the app target.
-8. ⬜ **Full on-device iOS 16.7 test pass.**
+8. ◐ **On-device test pass.** Ran on iOS 18.6 simulators (no iOS 16.7 runtime on Xcode
+   26.4; the two physical devices are on iOS 26.x and offline): PianoCore 64 ✅ ·
+   PianoAppTests 5/5 ✅ · XCUITests **4/4 on BOTH iPhone and iPad** ✅ · build ✅. This
+   surfaced and fixed a universal-app layout bug (see "Device test pass" below). ⬜ Still
+   pending: the pass on a real **iOS 16.7** device (the deployment-target floor), which
+   isn't available here.
 
 Plus: ✅ persistence layer (atomic JSON + backups) written + tested.
 
@@ -194,12 +199,26 @@ box).
 
 ### 🏁 FEATURE-COMPLETE (2026-07-09, `aec04a2`)
 Every client-requested feature and fix is implemented and gate-verified against origin:
-xcodebuild ✅ · PianoCore 64 ✅ · PianoAppTests 5/5 ✅ · XCUITests 4/4 ✅.
+xcodebuild ✅ · PianoCore 64 ✅ · PianoAppTests 5/5 ✅ · XCUITests 4/4 ✅ (iPad-only run —
+an iPhone run later found a layout bug; see "Device test pass" below).
 Remaining before ship: (1) five quick visual tap-throughs next iPad-in-hand session
 (all-time markers, fix-last-entry, miniboss admin section, settings persistence,
 picker cancel); (2) the migration rehearsal (docs/MIGRATION-REHEARSAL.md, Phases 1–5);
 (3) client sign-offs: seeding on/off + hall-of-fame vs active-only; (4) ship-day
 bundle-id flip (decision #10).
+
+### Device test pass (2026-07-09, iOS 18.6 sim) — iPhone battle-layout bug found & fixed
+The "XCUITests 4/4 ✅" above was an **iPad-only** run. Running the same suite on an
+**iPhone** (18.6 sim) surfaced a real universal-app bug (`TARGETED_DEVICE_FAMILY = "1,2"`):
+`BattleScreen`'s fixed two-column layout (flexible battle column + hard-coded 400pt boards
+column) overflows iPhone-portrait width, pushing the battle column — including the **Undo**
+button — off the left edge, untappable. Confirmed three ways: the XCUITest negative-x
+failure on iPhone, the same two tests passing on iPad, and a screenshot.
+Fix: `BattleScreen` is now **size-class adaptive** — two side-by-side columns on regular
+width (iPad/landscape, unchanged), boards stacked beneath the battle column in a scroll
+view on compact width (iPhone portrait). XCUITests now **4/4 on both iPhone and iPad**.
+Testing note: always run `PianoAppUITests` on BOTH form factors — the layout is size-class
+dependent, so an iPad-only pass hides iPhone regressions.
 
 ### Spec-compliance audit (2026-07-09) — four gaps found, ALL FIXED
 Full audit of the built system against every client ask. Everything else verified
