@@ -43,6 +43,7 @@ struct BackdoorView: View {
 
             if let record = live {
                 monsterStats(record, title: "Current monster")
+                hpFormula(record)
                 if miniboss != nil {
                     Section {
                         Text("This team's battle is paused while the miniboss is active. HP and kill-target edits still apply; it can't be attacked or autokilled until the miniboss ends.")
@@ -71,6 +72,7 @@ struct BackdoorView: View {
                 .font(.title3.bold()).foregroundStyle(.orange)
         }
         monsterStats(record, title: "Miniboss")
+        hpFormula(record)
         hpControls(record)
         killTargetControls(record)
         Section {
@@ -99,6 +101,40 @@ struct BackdoorView: View {
                 Text("\(store.state.remainingHP(of: record))").font(.title3.bold().monospacedDigit())
             }
         }
+    }
+
+    /// Shows exactly how this monster's HP was derived (client change request), and —
+    /// because the same numbers explain it — why small backdoor ± taps can look like they
+    /// do nothing when the HP is sitting on the minimum floor (the reported bug).
+    @ViewBuilder
+    private func hpFormula(_ record: MonsterRecord) -> some View {
+        let minHP = store.state.settings.minimumMonsterHP
+        let offset = record.backdoorHPDelta
+        let averages = record.spawnAverages.map { $0.average }
+        let base = MonsterMath.baseHP(dailyAverages: averages, killTargetWeeks: record.killTargetWeeks)
+        let raw = (record.legacyFixedHP ?? base) + offset
+
+        Section("How this HP was calculated") {
+            if let fixed = record.legacyFixedHP {
+                Text("Migrated monster — HP pinned at \(fixed)\(offsetText(offset)) = \(raw).")
+                    .font(.footnote.monospaced())
+            } else {
+                Text("⌈avg \(String(format: "%.1f", averages.reduce(0, +))) × \(record.killTargetWeeks) wk⌉ = \(base)\(offsetText(offset)) = \(raw).")
+                    .font(.footnote.monospaced())
+            }
+            if raw < minHP {
+                Text("That's below the \(minHP) HP minimum, so the bar is floored to \(minHP). Backdoor ± changes below the floor won't move the bar until they lift it back above \(minHP) — that's why a small tap can look like it did nothing.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            } else {
+                Text("Effective HP: \(store.state.effectiveHP(of: record)) (minimum is \(minHP)).")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func offsetText(_ offset: Int) -> String {
+        if offset == 0 { return "" }
+        return offset > 0 ? " + offset \(offset)" : " − offset \(abs(offset))"
     }
 
     private func hpControls(_ record: MonsterRecord) -> some View {

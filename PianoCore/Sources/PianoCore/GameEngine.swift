@@ -154,6 +154,33 @@ public enum GameEngine {
         return spawned
     }
 
+    // MARK: - Reset one student's practice (testing aid)
+
+    /// Wipes a single student's logged practice — every combat-log entry they created —
+    /// zeroing their daily average and their leaderboard contribution. The client asked
+    /// for a per-student reset "mostly for testing purposes".
+    ///
+    /// Safety: any past ATTACK action that included this student is dropped from the undo
+    /// history (so undo can never try to reverse an entry that no longer exists), but the
+    /// dropped actions are NOT reversed — every monster stays exactly as defeated/alive as
+    /// it was, every OTHER student's entries are untouched, and all frozen past boards
+    /// (denormalized snapshots) are unaffected. Not itself undoable.
+    public static func resetStudentPractice(into state: inout AppState, studentID: UUID) {
+        let removedIDs = Set(state.combatLog.entries
+            .filter { $0.studentID == studentID }
+            .map { $0.id })
+        guard !removedIDs.isEmpty else { return }
+        state.combatLog.removeEntries(withIDs: removedIDs)
+        // An attack action's entries all share one attacker, so this drops exactly the
+        // actions this student authored, leaving every other action undoable.
+        state.actions.removeAll { action in
+            if case .attack(let a) = action {
+                return a.entries.contains { $0.studentID == studentID }
+            }
+            return false
+        }
+    }
+
     // MARK: - Attack (with overkill carryover)
 
     /// Logs an attack against an explicit monster instance.

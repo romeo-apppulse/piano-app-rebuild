@@ -12,11 +12,12 @@ import PianoCore
 
 struct AveragesView: View {
     @EnvironmentObject private var store: GameStore
+    @State private var resetTarget: Student?
 
     var body: some View {
         List {
             Section {
-                Text("Daily average = live damage in the last \(AverageWindow.windowDays) days ÷ distinct days practiced.")
+                Text("Daily average = live damage in the last \(AverageWindow.windowDays) days ÷ distinct days practiced. The ↺ button wipes a student's logged practice (their average AND leaderboard damage) — a testing aid that can't be undone.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
@@ -35,6 +36,20 @@ struct AveragesView: View {
             }
         }
         .navigationTitle("Daily Averages")
+        .confirmationDialog(
+            resetTarget.map { "Reset \($0.name)'s practice history? This clears their daily average and their leaderboard damage, and can't be undone." } ?? "",
+            isPresented: Binding(get: { resetTarget != nil },
+                                 set: { if !$0 { resetTarget = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let target = resetTarget {
+                Button("Reset \(target.name)", role: .destructive) {
+                    store.resetStudentPractice(target.id)
+                    resetTarget = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { resetTarget = nil }
+        }
     }
 
     private func activeMembers(_ teamID: UUID) -> [Student] {
@@ -47,6 +62,12 @@ struct AveragesView: View {
             Spacer()
             Text(formatted(store.dailyAverage(for: student.id)))
                 .font(.title3.monospacedDigit().weight(.semibold))
+            Button(role: .destructive) { resetTarget = student } label: {
+                Image(systemName: "arrow.counterclockwise")
+            }
+            .buttonStyle(.borderless)
+            .padding(.leading, 12)
+            .accessibilityLabel("Reset \(student.name)'s averages")
         }
     }
 

@@ -125,6 +125,13 @@ final class GameStore: ObservableObject {
         commit { _ = GameEngine.setLineup(into: &$0, slots: slots, at: date) }
     }
 
+    /// Wipe one student's logged practice (resets their average + leaderboard total).
+    /// A testing aid — not undoable. See GameEngine.resetStudentPractice for the safety
+    /// contract (defeats and other students' history are left untouched).
+    func resetStudentPractice(_ studentID: UUID) {
+        commit { GameEngine.resetStudentPractice(into: &$0, studentID: studentID) }
+    }
+
     @discardableResult
     func undoLast(teamScope: UUID? = nil) -> Bool {
         var undone = false

@@ -111,4 +111,55 @@ public enum Leaderboards {
         }
         return ranked(totals.map { (id: $0.key, name: state.displayName($0.key), total: $0.value) })
     }
+
+    // MARK: - 4. All-time by practice AVERAGE (the board the client actually wanted)
+
+    /// One row of the practice-average board. Carries the fractional average (not an Int
+    /// total) so the board can show the SAME number as the Daily Averages page.
+    public struct AverageLeaderboardRow: Identifiable, Codable, Hashable {
+        public let id: UUID            // studentID
+        public let displayName: String
+        public let average: Double
+        public let rank: Int           // dense, 1-based
+
+        public init(id: UUID, displayName: String, average: Double, rank: Int) {
+            self.id = id
+            self.displayName = displayName
+            self.average = average
+            self.rank = rank
+        }
+    }
+
+    /// Every ACTIVE student ranked by their current daily practice AVERAGE — the exact
+    /// number shown on the Daily Averages page — highest first. Dense shared-placement
+    /// ranking, matching the damage boards (equal averages share a placement, the next
+    /// distinct average gets the next number). `.migration` seeds are already excluded by
+    /// the daily-average definition, so this reflects real logged practice only.
+    public static func averageBoard(state: AppState, now: Date) -> [AverageLeaderboardRow] {
+        let calendar = state.settings.resolvedCalendar
+        let entries = state.combatLog.entries
+        let scored = state.activeStudents.map { student -> (id: UUID, name: String, avg: Double) in
+            (id: student.id,
+             name: student.name,
+             avg: PracticeMath.dailyAverage(forStudent: student.id, entries: entries,
+                                            now: now, calendar: calendar))
+        }
+        let sorted = scored.sorted { a, b in
+            if a.avg != b.avg { return a.avg > b.avg }
+            let byName = a.name.localizedCaseInsensitiveCompare(b.name)
+            if byName != .orderedSame { return byName == .orderedAscending }
+            return a.id.uuidString < b.id.uuidString   // fully deterministic tiebreak
+        }
+        var rows: [AverageLeaderboardRow] = []
+        var lastAvg: Double? = nil
+        var rank = 0
+        for s in sorted {
+            if lastAvg != s.avg {
+                rank += 1
+                lastAvg = s.avg
+            }
+            rows.append(AverageLeaderboardRow(id: s.id, displayName: s.name, average: s.avg, rank: rank))
+        }
+        return rows
+    }
 }
