@@ -109,12 +109,17 @@ struct BattleScreen: View {
                 Text(artist).font(.title3).foregroundStyle(.secondary)
             }
 
-            MonsterArt(template: template(record)).frame(maxHeight: 360)
+            // Fill the leftover vertical space with the art on iPad (regular width),
+            // which pushes the HP bar + Attack button toward the bottom. On a compact
+            // width the column lives inside a scroll view, so cap the height instead of
+            // letting it grow unbounded.
+            MonsterArt(template: template(record))
+                .frame(maxWidth: .infinity, maxHeight: hSizeClass == .compact ? 320 : .infinity)
 
             hpBar(record)
 
             Button { showAttack = true } label: {
-                Label("LOG PRACTICE", systemImage: "flame.fill")
+                Label("ATTACK", systemImage: "flame.fill")
                     .font(.title.bold()).frame(maxWidth: .infinity, minHeight: 84)
             }
             .buttonStyle(.borderedProminent).tint(.orange)

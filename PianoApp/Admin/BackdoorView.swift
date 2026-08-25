@@ -162,25 +162,42 @@ struct BackdoorView: View {
 
     // MARK: - No live monster → spawn
 
+    @ViewBuilder
     private var spawnControls: some View {
-        Section("No active monster") {
-            Text("This team has no monster in play. Spawn one to begin.")
-                .font(.footnote).foregroundStyle(.secondary)
-            Picker("Monster", selection: $spawnTemplateID) {
-                Text("Choose…").tag(UUID?.none)
-                ForEach(store.state.monsterCatalog.filter { $0.kind == .regular }) {
-                    Text($0.name).tag(UUID?.some($0.id))
+        if !store.state.lineup.isEmpty {
+            // A lineup exists → start from it so the slot id and pointer advance and the
+            // lineup (and any miniboss) stays in sync with the battle. Normally teams are
+            // auto-started when the lineup is saved; this is the per-team catch-up.
+            Section("No active monster") {
+                Text("This team has no monster in play. Start it on the next monster in the lineup.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Button {
+                    if let team = teamID { store.spawnFromLineup(teamID: team) }
+                } label: {
+                    Label("Start from lineup", systemImage: "play.fill").font(.title3.bold())
                 }
             }
-            Button {
-                if let team = teamID, let template = spawnTemplateID {
-                    store.spawnInitialMonster(teamID: team, templateID: template)
-                    spawnTemplateID = nil
+        } else {
+            // No lineup configured → fall back to hand-picking a monster.
+            Section("No active monster") {
+                Text("This team has no monster in play. Spawn one to begin (or set up a Lineup so teams start automatically).")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Picker("Monster", selection: $spawnTemplateID) {
+                    Text("Choose…").tag(UUID?.none)
+                    ForEach(store.state.monsterCatalog.filter { $0.kind == .regular }) {
+                        Text($0.name).tag(UUID?.some($0.id))
+                    }
                 }
-            } label: {
-                Label("Start Battle", systemImage: "play.fill").font(.title3.bold())
+                Button {
+                    if let team = teamID, let template = spawnTemplateID {
+                        store.spawnInitialMonster(teamID: team, templateID: template)
+                        spawnTemplateID = nil
+                    }
+                } label: {
+                    Label("Start Battle", systemImage: "play.fill").font(.title3.bold())
+                }
+                .disabled(spawnTemplateID == nil)
             }
-            .disabled(spawnTemplateID == nil)
         }
     }
 

@@ -26,7 +26,7 @@ struct LineupView: View {
     var body: some View {
         List {
             Section {
-                Text("Teams face these monsters in order. A miniboss slot pauses all teams when the first team reaches it.")
+                Text("Teams face these monsters in order. A miniboss slot pauses all teams when the first team reaches it. Drag the ≡ handle (via Edit) to reorder. Saving starts every team that isn't already fighting at the beginning of the lineup.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
@@ -67,9 +67,13 @@ struct LineupView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { EditButton() }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Save") { store.setLineup(slots); baseline = slots }
-                    .bold()
-                    .disabled(!dirty)
+                Button("Save") {
+                    store.setLineup(slots)
+                    store.startIdleTeamsFromLineup()   // idle teams begin at the top of the new lineup
+                    baseline = slots
+                }
+                .bold()
+                .disabled(!dirty)
             }
         }
         .onAppear { if !loaded { slots = store.state.lineup; baseline = slots; loaded = true } }

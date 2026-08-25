@@ -84,6 +84,76 @@ public enum GameEngine {
         return .success(record)
     }
 
+    // MARK: - Spawning from the lineup (keeps lineup ↔ battle in lockstep)
+
+    /// Spawns a team's monster FROM its lineup position: the next REGULAR slot at or
+    /// after the team's pointer (miniboss slots are skipped — a miniboss only enters via
+    /// a triggering defeat, never as an initial spawn). Crucially, this sets the record's
+    /// `lineupSlotID` and advances `nextLineupIndex`, so the very first monster of a
+    /// battle participates in the lineup exactly like every later successor does. Without
+    /// this, an initial monster started from Backdoor sat outside the lineup and the
+    /// pointer never moved, so the configured lineup (and its miniboss) never lined up
+    /// with the battles actually happening.
+    ///
+    /// Returns `.success(nil)` when there is nothing to do: the team already has a live
+    /// regular monster, the lineup is empty, or the lineup holds no spawnable regular
+    /// slot. Battle setup — not an undoable action (consistent with `spawnInitialMonster`).
+    @discardableResult
+    public static func spawnFromLineup(into state: inout AppState,
+                                       teamID: UUID,
+                                       at: Date) -> Result<MonsterRecord?, EngineError> {
+        guard let teamIdx = state.teams.firstIndex(where: { $0.id == teamID }) else { return .failure(.teamNotFound) }
+        guard state.aliveMiniboss == nil else { return .success(nil) }   // battles are paused under a miniboss
+        guard state.aliveRegularRecord(forTeam: teamID) == nil else { return .success(nil) }
+        guard !state.lineup.isEmpty else { return .success(nil) }
+
+        let count = state.lineup.count
+        let rawPointer = state.teams[teamIdx].nextLineupIndex
+        var idx = ((rawPointer % count) + count) % count   // safe modulo (edits can shrink the lineup)
+
+        for _ in 0..<count {
+            let slot = state.lineup[idx]
+            if state.monsterCatalog.first(where: { $0.id == slot.templateID })?.kind == .regular {
+                let record = MonsterRecord(
+                    templateID: slot.templateID,
+                    kind: .regular,
+                    teamID: teamID,
+                    spawnedAt: at,
+                    spawnSequence: state.nextSpawnSequence,
+                    spawnAverages: teamSpawnAverages(teamID: teamID, state: state, at: at),
+                    killTargetWeeks: state.settings.defaultKillTargetWeeks,
+                    lineupSlotID: slot.id
+                )
+                state.ledger.append(record)
+                state.teams[teamIdx].nextLineupIndex = (idx + 1) % count
+                return .success(record)
+            }
+            idx = (idx + 1) % count
+        }
+        return .success(nil)   // lineup has no regular slot to start on
+    }
+
+    /// Auto-starts every team that is NOT currently fighting a monster on the FIRST
+    /// monster of the lineup (client: "when I set the lineup, every idle team should
+    /// begin at the start of the lineup"). Idle teams are reset to the top of the lineup
+    /// first; teams already mid-battle are left exactly where they are. No-op while a
+    /// miniboss is active (all battles are paused) or when the lineup is empty. Battle
+    /// setup — not undoable.
+    @discardableResult
+    public static func startIdleTeamsFromLineup(into state: inout AppState, at: Date) -> [MonsterRecord] {
+        guard state.aliveMiniboss == nil, !state.lineup.isEmpty else { return [] }
+        var spawned: [MonsterRecord] = []
+        for team in state.teams where state.aliveRegularRecord(forTeam: team.id) == nil {
+            if let idx = state.teams.firstIndex(where: { $0.id == team.id }) {
+                state.teams[idx].nextLineupIndex = 0   // begin at the start of the lineup
+            }
+            if case .success(let record?) = spawnFromLineup(into: &state, teamID: team.id, at: at) {
+                spawned.append(record)
+            }
+        }
+        return spawned
+    }
+
     // MARK: - Attack (with overkill carryover)
 
     /// Logs an attack against an explicit monster instance.

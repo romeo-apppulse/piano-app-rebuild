@@ -74,6 +74,18 @@ final class GameStore: ObservableObject {
         commit { _ = GameEngine.spawnInitialMonster(into: &$0, teamID: teamID, templateID: templateID, at: date) }
     }
 
+    /// Start one team's monster from the lineup (Backdoor "Start from lineup"). Sets the
+    /// slot id and advances the pointer so the lineup and the battle stay in lockstep.
+    func spawnFromLineup(teamID: UUID, at date: Date = Date()) {
+        commit { _ = GameEngine.spawnFromLineup(into: &$0, teamID: teamID, at: date) }
+    }
+
+    /// Auto-start every idle team at the beginning of the lineup. Called when the teacher
+    /// saves the lineup, so she no longer has to hand-start each team in Backdoor.
+    func startIdleTeamsFromLineup(at date: Date = Date()) {
+        commit { _ = GameEngine.startIdleTeamsFromLineup(into: &$0, at: date) }
+    }
+
     /// Returns the engine result so the UI can trigger the congrats moment on a kill and
     /// surface rejections (e.g. `.minibossActive`). Persists only on success.
     @discardableResult
