@@ -134,7 +134,7 @@ struct BattleScreen: View {
                 .accessibilityIdentifier("battle.undo")
                 Spacer()
                 Button { showAllTime = true } label: {
-                    Label("All-Time", systemImage: "trophy.fill").font(.title3)
+                    Label("Leaderboards", systemImage: "trophy.fill").font(.title3)
                 }
                 .buttonStyle(.bordered)
             }
@@ -204,8 +204,9 @@ struct BattleScreen: View {
                     Text("No hits yet.").foregroundStyle(.secondary)
                 }
                 ForEach(entries.prefix(10)) { entry in
-                    Text("\(store.state.displayName(entry.studentID)) does \(entry.amount) dmg to the monster!")
+                    Text("\(store.state.displayName(entry.studentID)) does \(entry.amount)\(entry.origin == .extraPoints ? " Extra Points" : "") dmg to the monster!")
                         .font(.headline)
+                        .foregroundStyle(entry.origin == .extraPoints ? .purple : .primary)
                 }
             }
         }

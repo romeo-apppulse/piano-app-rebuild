@@ -26,7 +26,7 @@ struct LineupView: View {
     var body: some View {
         List {
             Section {
-                Text("Teams face these monsters in order. A miniboss slot pauses all teams when the first team reaches it. Drag the ≡ handle (via Edit) to reorder. Saving starts every team that isn't already fighting at the beginning of the lineup.")
+                Text("Teams face these monsters in order. A miniboss slot pauses all teams when the first team reaches it. Reorder with the ↑/↓ arrows (or drag the ≡ handle in Edit mode). Saving starts every team that isn't already fighting at the beginning of the lineup.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
@@ -57,6 +57,17 @@ struct LineupView: View {
                             .foregroundStyle(kind(slot) == .miniboss ? .orange : .secondary)
                         Text(name(slot)).font(.title3)
                         Spacer()
+                        // Always-available reorder (no Edit mode needed) — the client found
+                        // drag-only reordering cumbersome. Drag still works in Edit mode.
+                        Button { moveUp(index) } label: { Image(systemName: "chevron.up") }
+                            .buttonStyle(.borderless)
+                            .disabled(index == 0)
+                            .accessibilityLabel("Move \(name(slot)) up")
+                        Button { moveDown(index) } label: { Image(systemName: "chevron.down") }
+                            .buttonStyle(.borderless)
+                            .disabled(index == slots.count - 1)
+                            .padding(.leading, 10)
+                            .accessibilityLabel("Move \(name(slot)) down")
                     }
                 }
                 .onMove { slots.move(fromOffsets: $0, toOffset: $1) }
@@ -81,6 +92,16 @@ struct LineupView: View {
             // Adopt an external change only when the user has no pending edits.
             if slots == baseline { slots = newValue; baseline = newValue }
         }
+    }
+
+    private func moveUp(_ index: Int) {
+        guard index > 0 else { return }
+        slots.swapAt(index, index - 1)
+    }
+
+    private func moveDown(_ index: Int) {
+        guard index < slots.count - 1 else { return }
+        slots.swapAt(index, index + 1)
     }
 
     private func template(_ slot: LineupSlot) -> MonsterTemplate? {

@@ -21,6 +21,9 @@ import Foundation
 public enum EntryOrigin: String, Codable, Hashable {
     case live        // a real logged attack — counts everywhere
     case migration   // day-one seed — counts for leaderboards, EXCLUDED from averages
+    case extraPoints // bonus "Extra Points" damage — real damage to the monster and it
+                     // counts on the damage leaderboards, but is EXCLUDED from practice
+                     // averages (client: extra points are a reward, not practice time).
 }
 
 public struct CombatLogEntry: Identifiable, Codable, Hashable {

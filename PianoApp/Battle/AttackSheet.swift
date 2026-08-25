@@ -20,6 +20,7 @@ struct AttackSheet: View {
 
     @State private var studentID: UUID?
     @State private var input = ""
+    @State private var extraPoints = false
 
     private let columns = [GridItem(.adaptive(minimum: 160), spacing: 16)]
     private let padColumns = Array(repeating: GridItem(.flexible(), spacing: 16), count: 3)
@@ -47,9 +48,21 @@ struct AttackSheet: View {
 
                     if studentID != nil {
                         Divider()
+
+                        // Extra Points: real damage to the monster, but tagged so it never
+                        // counts toward practice averages and reads differently in the log.
+                        Toggle(isOn: $extraPoints) {
+                            Label("Extra Points", systemImage: "star.fill")
+                                .font(.title3.bold())
+                        }
+                        .toggleStyle(.button)
+                        .tint(.purple)
+                        .accessibilityIdentifier("attack.extraPoints")
+
                         Text(input.isEmpty ? "0" : input)
                             .font(.system(size: 72, weight: .heavy, design: .rounded))
                             .frame(maxWidth: .infinity)
+                            .foregroundStyle(extraPoints ? .purple : .primary)
                             .contentTransition(.numericText())
 
                         LazyVGrid(columns: padColumns, spacing: 16) {
@@ -96,7 +109,8 @@ struct AttackSheet: View {
 
     private func attack() {
         guard let studentID, let amount = Int(input) else { return }
-        let result = store.attack(targetRecordID: target.id, studentID: studentID, amount: amount)
+        let result = store.attack(targetRecordID: target.id, studentID: studentID, amount: amount,
+                                  origin: extraPoints ? .extraPoints : .live)
         onResolved(result)
         dismiss()
     }

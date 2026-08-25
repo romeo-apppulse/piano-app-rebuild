@@ -162,4 +162,54 @@ public enum Leaderboards {
         }
         return rows
     }
+
+    // MARK: - 5. Extra boards (client "wants": single-hit, weekly, team-weekly)
+    //
+    // These are DAMAGE boards, so Extra Points hits count (they are real damage) while
+    // day-one migration seeds do not (a seed is a lump baseline, not a dated hit).
+
+    private static func countsAsHit(_ entry: CombatLogEntry) -> Bool { entry.origin != .migration }
+
+    /// Each active student ranked by their single biggest hit ever (highest first).
+    /// Students with no qualifying hit are omitted.
+    public static func highestSingleHit(state: AppState) -> [LeaderboardRow] {
+        let activeIDs = Set(state.activeStudents.map { $0.id })
+        var best: [UUID: Int] = [:]
+        for entry in state.combatLog.entries
+        where countsAsHit(entry) && activeIDs.contains(entry.studentID) {
+            best[entry.studentID] = max(best[entry.studentID] ?? 0, entry.amount)
+        }
+        return ranked(best.map { (id: $0.key, name: state.displayName($0.key), total: $0.value) })
+    }
+
+    /// Each active student ranked by TOTAL damage in the last 7 days (highest first).
+    /// Every active student appears, even at 0.
+    public static func weeklyDamage(state: AppState, now: Date) -> [LeaderboardRow] {
+        let window = AverageWindow.interval(endingAt: now, days: 7, calendar: state.settings.resolvedCalendar)
+        let activeIDs = Set(state.activeStudents.map { $0.id })
+        var totals: [UUID: Int] = [:]
+        for student in state.activeStudents { totals[student.id] = 0 }
+        for entry in state.combatLog.entries
+        where countsAsHit(entry) && activeIDs.contains(entry.studentID) && window.contains(entry.timestamp) {
+            totals[entry.studentID, default: 0] += entry.amount
+        }
+        return ranked(totals.map { (id: $0.key, name: state.displayName($0.key), total: $0.value) })
+    }
+
+    /// Teams ranked by their members' TOTAL damage in the last 7 days (highest first).
+    /// Row `id` is the teamID and `displayName` is the team name. Every team appears,
+    /// even at 0; damage from unassigned students isn't attributed to any team.
+    public static func teamWeekly(state: AppState, now: Date) -> [LeaderboardRow] {
+        let window = AverageWindow.interval(endingAt: now, days: 7, calendar: state.settings.resolvedCalendar)
+        var teamOf: [UUID: UUID] = [:]
+        for student in state.activeStudents where student.teamID != nil { teamOf[student.id] = student.teamID }
+        var totals: [UUID: Int] = [:]
+        for team in state.teams { totals[team.id] = 0 }
+        for entry in state.combatLog.entries
+        where countsAsHit(entry) && window.contains(entry.timestamp) {
+            if let teamID = teamOf[entry.studentID] { totals[teamID, default: 0] += entry.amount }
+        }
+        let names = Dictionary(uniqueKeysWithValues: state.teams.map { ($0.id, $0.name) })
+        return ranked(totals.map { (id: $0.key, name: names[$0.key] ?? "Unknown", total: $0.value) })
+    }
 }

@@ -197,7 +197,8 @@ public enum GameEngine {
                               targetRecordID: UUID,
                               studentID: UUID,
                               amount: Int,
-                              at: Date) -> Result<AttackResult, EngineError> {
+                              at: Date,
+                              origin: EntryOrigin = .live) -> Result<AttackResult, EngineError> {
         guard amount >= 0 else { return .failure(.negativeAmount) }
         guard state.student(studentID) != nil else { return .failure(.studentNotFound) }
         guard let target = state.monsterRecord(targetRecordID) else { return .failure(.monsterNotFound) }
@@ -222,7 +223,8 @@ public enum GameEngine {
                 entries.append(state.combatLog.appendEntry(studentID: studentID,
                                                            monsterRecordID: current.id,
                                                            amount: pending,
-                                                           timestamp: at))
+                                                           timestamp: at,
+                                                           origin: origin))
                 break
             }
 
@@ -230,7 +232,8 @@ public enum GameEngine {
             let killingEntry = state.combatLog.appendEntry(studentID: studentID,
                                                            monsterRecordID: current.id,
                                                            amount: remaining,
-                                                           timestamp: at)
+                                                           timestamp: at,
+                                                           origin: origin)
             entries.append(killingEntry)
             pending -= remaining
 
@@ -298,7 +301,8 @@ public enum GameEngine {
                       targetRecordID: original.monsterRecordID,
                       studentID: original.studentID,
                       amount: newAmount,
-                      at: original.timestamp)
+                      at: original.timestamp,
+                      origin: original.origin)   // an edited Extra Points hit stays Extra Points
     }
 
     /// Deletes the MOST RECENT attack entry in scope. By design this is the SAME
